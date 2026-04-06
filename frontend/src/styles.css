@@ -1,0 +1,269 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;600&display=swap');
+
+:root {
+  --bg: #0d1320;
+  --panel: #121c2d;
+  --panel-soft: #18243a;
+  --border: #2a3a56;
+  --text: #e7edf8;
+  --muted: #9bb0d1;
+  --accent: #3cd3ad;
+  --accent-soft: #224f5b;
+  --danger: #ff7a7a;
+  --user-bubble: #1f2f4a;
+  --assistant-bubble: #132a38;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'Space Grotesk', 'Segoe UI Variable', sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(circle at 20% 20%, #1a2a46 0%, transparent 40%),
+    radial-gradient(circle at 80% 0%, #243d5b 0%, transparent 30%),
+    var(--bg);
+}
+
+.app-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+}
+
+.sidebar {
+  border-right: 1px solid var(--border);
+  background: linear-gradient(180deg, #101a2d 0%, #0f1727 100%);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.brand-block h1 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.brand-block p {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.primary-btn {
+  border: 1px solid transparent;
+  background: linear-gradient(135deg, #34c89f, #2a84c6);
+  color: #06101c;
+  font-weight: 700;
+  border-radius: 0.75rem;
+  padding: 0.65rem 0.9rem;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.primary-btn:hover {
+  transform: translateY(-1px);
+}
+
+.primary-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.chat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  overflow: auto;
+}
+
+.chat-item {
+  border: 1px solid var(--border);
+  background: #111b2d;
+  color: var(--text);
+  border-radius: 0.7rem;
+  padding: 0.6rem;
+  text-align: left;
+  display: grid;
+  gap: 0.2rem;
+  position: relative;
+  cursor: pointer;
+}
+
+.chat-item.active {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px #2ad5b2;
+}
+
+.chat-item small {
+  color: var(--muted);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.7rem;
+}
+
+.delete-chat {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.5rem;
+  color: var(--danger);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.8rem;
+}
+
+.status-card {
+  margin-top: auto;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  padding: 0.7rem;
+  background: var(--panel-soft);
+  color: var(--muted);
+}
+
+.chat-panel {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  min-height: 100vh;
+}
+
+.chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.2rem;
+  border-bottom: 1px solid var(--border);
+  background: rgba(18, 28, 45, 0.75);
+  backdrop-filter: blur(8px);
+}
+
+.chat-header h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.chat-header p {
+  margin: 0.2rem 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.model-selector {
+  border: 1px solid var(--border);
+  background: #0f1a2d;
+  color: var(--text);
+  border-radius: 0.65rem;
+  padding: 0.5rem 0.6rem;
+  min-width: 220px;
+}
+
+.message-feed {
+  padding: 1rem 1.2rem;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.empty-state {
+  margin: auto;
+  text-align: center;
+  color: var(--muted);
+}
+
+.bubble {
+  max-width: min(900px, 100%);
+  border: 1px solid var(--border);
+  border-radius: 0.85rem;
+  padding: 0.65rem 0.8rem;
+  animation: fadeIn 0.2s ease;
+}
+
+.bubble.user {
+  margin-left: auto;
+  background: var(--user-bubble);
+}
+
+.bubble.assistant {
+  margin-right: auto;
+  background: var(--assistant-bubble);
+}
+
+.bubble .role {
+  display: block;
+  margin-bottom: 0.3rem;
+  color: var(--muted);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+}
+
+.bubble p {
+  margin: 0;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.composer {
+  border-top: 1px solid var(--border);
+  background: rgba(15, 23, 39, 0.9);
+  padding: 0.9rem 1.2rem;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.8rem;
+}
+
+.composer textarea {
+  width: 100%;
+  min-height: 86px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: #0d1628;
+  color: var(--text);
+  padding: 0.65rem;
+  font: inherit;
+}
+
+.error-banner {
+  border-top: 1px solid #6d2b2b;
+  background: rgba(157, 32, 32, 0.2);
+  color: #ffd2d2;
+  padding: 0.6rem 1rem;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.8rem;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 960px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    max-height: 38vh;
+  }
+
+  .chat-panel {
+    min-height: 62vh;
+  }
+
+  .model-selector {
+    min-width: 160px;
+  }
+}

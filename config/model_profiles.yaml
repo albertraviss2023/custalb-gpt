@@ -1,0 +1,66 @@
+version: 1
+
+selector:
+  default_model_id: gemma4_e4b_8bit
+  allow_per_chat_override: true
+  persist_selection_per_chat: true
+  hot_switch_enabled: true
+  unload_inactive_after_minutes: 20
+
+models:
+  - id: gemma4_e4b_16bit
+    display_name: Gemma 4 E4B 16-bit
+    quantization: bf16
+    tier: balanced_quality
+    description: Highest-fidelity E4B profile. Slower on 8GB VRAM due to offload.
+    runtime:
+      backend: local_runtime
+      model_ref: google/gemma-4-E4B-it
+      precision: bf16
+    limits:
+      max_context_tokens: 8192
+      max_output_tokens: 1024
+    startup:
+      prewarm: false
+      gpu_offload: partial
+
+  - id: gemma4_e4b_8bit
+    display_name: Gemma 4 E4B 8-bit
+    quantization: sfp8
+    tier: default
+    description: Best daily balance of quality and speed on this laptop.
+    runtime:
+      backend: local_runtime
+      model_ref: gemma4:e4b
+      precision: int8
+    limits:
+      max_context_tokens: 16384
+      max_output_tokens: 1024
+    startup:
+      prewarm: true
+      gpu_offload: auto
+
+  - id: gemma4_26b_a4b_4bit
+    display_name: Gemma 4 26B A4B 4-bit
+    quantization: q4
+    tier: deep_quality
+    description: Highest quality mode on this laptop, with slower responses.
+    runtime:
+      backend: local_runtime
+      model_ref: gemma4:26b
+      precision: int4
+    limits:
+      max_context_tokens: 8192
+      max_output_tokens: 768
+    startup:
+      prewarm: false
+      gpu_offload: hybrid_ram_vram
+
+routing:
+  on_oom: fallback_to_next_tier
+  fallback_order:
+    - gemma4_e4b_8bit
+    - gemma4_e4b_16bit
+    - gemma4_26b_a4b_4bit
+  on_timeout_seconds: 90
+  timeout_fallback_to: gemma4_e4b_8bit

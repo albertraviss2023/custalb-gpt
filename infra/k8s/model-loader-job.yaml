@@ -1,0 +1,27 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: goi-model-loader
+  namespace: personal-goi
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: model-loader
+          image: curlimages/curl:8.12.1
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              until curl -sf http://ollama:11434/api/tags >/dev/null; do
+                echo "Waiting for ollama..."
+                sleep 4
+              done
+
+              for model in gemma4:e4b gemma4:26b gemma4:e2b; do
+                echo "Pulling ${model}"
+                curl -s http://ollama:11434/api/pull -d "{\"name\":\"${model}\",\"stream\":false}"
+              done

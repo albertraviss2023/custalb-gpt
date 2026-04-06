@@ -1,0 +1,56 @@
+name: personal-goi
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: goi-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    environment:
+      OLLAMA_KEEP_ALIVE: 24h
+    gpus: all
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  api:
+    build:
+      context: ..
+      dockerfile: infra/docker/backend.Dockerfile
+    container_name: goi-api
+    restart: unless-stopped
+    environment:
+      GOI_OLLAMA_BASE_URL: http://ollama:11434
+      GOI_DATABASE_PATH: /app/data/app.db
+      GOI_MODEL_PROFILES_PATH: /app/config/model_profiles.yaml
+      GOI_OLLAMA_REQUEST_TIMEOUT_SECONDS: 180
+    volumes:
+      - api-data:/app/data
+      - ../config:/app/config:ro
+    depends_on:
+      ollama:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+  ui:
+    build:
+      context: ..
+      dockerfile: infra/docker/frontend.Dockerfile
+      args:
+        VITE_API_BASE_URL: /api
+    container_name: goi-ui
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "3000:80"
+
+volumes:
+  ollama-data:
+  api-data:
