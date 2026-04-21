@@ -2045,12 +2045,42 @@ function App() {
                     </div>
                   </div>
 
-                  <div className="setup-actions">
-                    <button className="primary-setup-btn" onClick={() => void handleStartInterviewSession(false)}>Start Practice Session</button>
-                    {messages.length > 0 && (
-                      <button className="primary-setup-btn" style={{ background: '#48bb78' }} onClick={() => void handleStartInterviewSession(true)}>Resume Session</button>
-                    )}
-                    <button className="secondary-btn" style={{ padding: '1rem' }} onClick={() => setShowAdvancedSetup(true)}>Advanced Setup</button>
+                  <div className="setup-actions" style={{ flexDirection: 'column', gap: '1.25rem' }}>
+                    <button 
+                      className="primary-setup-btn" 
+                      onClick={() => void handleStartInterviewSession(false)}
+                      style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'center', 
+                        gap: '1rem', 
+                        fontSize: '1.25rem',
+                        padding: '1.25rem',
+                        background: '#2f64e1',
+                        boxShadow: '0 4px 14px rgba(47, 100, 225, 0.4)'
+                      }}
+                    >
+                      <span style={{ fontSize: '1.5rem' }}>▶</span> Start Practice Session
+                    </button>
+                    
+                    <div style={{ display: 'flex', gap: '1rem', width: '100%' }}>
+                      {messages.length > 0 && (
+                        <button 
+                          className="primary-setup-btn" 
+                          style={{ background: '#48bb78', flex: 1 }} 
+                          onClick={() => void handleStartInterviewSession(true)}
+                        >
+                          Resume Session
+                        </button>
+                      )}
+                      <button 
+                        className="secondary-btn" 
+                        style={{ padding: '1rem', flex: 1, fontSize: '0.9rem' }} 
+                        onClick={() => setShowAdvancedSetup(true)}
+                      >
+                        Advanced Setup
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
