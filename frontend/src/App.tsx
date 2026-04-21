@@ -295,10 +295,13 @@ function App() {
     return messages.some((m) => m.role === 'assistant' && m.content.includes('CBI_SCORECARD_JSON:'))
   }, [messages])
 
+  const activeAddon = useMemo(() => addons.find(a => a.id === activeAddonId), [addons, activeAddonId])
+  
   const isCbiMode = 
     activeAddonId.toLowerCase().includes('interview') || 
     activeGemName.toLowerCase().includes('interview') ||
     activeGemName.toLowerCase().includes('cbi') ||
+    activeAddon?.category === 'interview' ||
     hasScorecardInHistory
 
   const filteredChats = useMemo(() => {
@@ -751,29 +754,32 @@ function App() {
     event.preventDefault()
   }
 
-  async function handleStartInterviewSession() {
+  async function handleStartInterviewSession(resume = false) {
     if (!isCbiMode) return
     if (interviewSessionState === 'running') return
-    if (interviewSessionState === 'paused') {
-      if (autoStartCamera && !cameraActive) {
-        await startInterviewCamera()
-      }
-      setInterviewSessionState('running')
-      return
-    }
-    if (interviewSessionState === 'ended' || interviewRemainingSeconds <= 0) {
-      setInterviewRemainingSeconds(interviewDurationMinutes * 60)
-    }
+    
     if (autoStartCamera && !cameraActive) {
       await startInterviewCamera()
     }
+    
     setInterviewSessionState('running')
     interviewAutoConcludeRef.current = false
-    await handleSend(
-      'Start CBI practice now. Ask exactly one primary UN-style competency question only, then wait for my answer.',
-      false,
-      true,
-    )
+    
+    if (resume) {
+      // Just notify the panel we are back
+      await handleSend(
+        'I am back. Please continue the interview from where we left off.',
+        false,
+        true,
+      )
+    } else {
+      // Fresh start
+      await handleSend(
+        'Start CBI practice now. Ask exactly one primary UN-style competency question only, then wait for my answer.',
+        false,
+        true,
+      )
+    }
   }
 
   function handlePauseInterviewSession() {
@@ -830,14 +836,19 @@ function App() {
   }, [interviewSessionState])
 
   useEffect(() => {
+    setInterviewSessionState('idle')
+    setInterviewRemainingSeconds(interviewDurationMinutes * 60)
+    interviewAutoConcludeRef.current = false
+    stopInterviewCamera()
+    setCameraError(null)
+  }, [activeChatId, interviewDurationMinutes])
+
+  useEffect(() => {
     if (!isCbiMode) {
       setInterviewSessionState('idle')
-      setInterviewRemainingSeconds(interviewDurationMinutes * 60)
-      interviewAutoConcludeRef.current = false
       stopInterviewCamera()
-      setCameraError(null)
     }
-  }, [isCbiMode, activeChatId, interviewDurationMinutes])
+  }, [isCbiMode])
 
   useEffect(() => {
     if (!isCbiMode || !cameraActive) return
@@ -2035,7 +2046,10 @@ function App() {
                   </div>
 
                   <div className="setup-actions">
-                    <button className="primary-setup-btn" onClick={() => void handleStartInterviewSession()}>Start Practice Session</button>
+                    <button className="primary-setup-btn" onClick={() => void handleStartInterviewSession(false)}>Start Practice Session</button>
+                    {messages.length > 0 && (
+                      <button className="primary-setup-btn" style={{ background: '#48bb78' }} onClick={() => void handleStartInterviewSession(true)}>Resume Session</button>
+                    )}
                     <button className="secondary-btn" style={{ padding: '1rem' }} onClick={() => setShowAdvancedSetup(true)}>Advanced Setup</button>
                   </div>
                 </div>
