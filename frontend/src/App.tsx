@@ -1883,18 +1883,18 @@ function App() {
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '0.75rem' }}>
                             <div className="stat-item">
                               <div className="stat-label" style={{ fontSize: '0.6rem' }}>Confidence</div>
-                              <div className="stat-value" style={{ fontSize: '0.9rem' }}>{scorecard.delivery.confidence}%</div>
+                              <div className="stat-value" style={{ fontSize: '0.9rem' }}>{scorecard.delivery?.confidence ?? 0}%</div>
                             </div>
                             <div className="stat-item">
                               <div className="stat-label" style={{ fontSize: '0.6rem' }}>Clarity</div>
-                              <div className="stat-value" style={{ fontSize: '0.9rem' }}>{scorecard.delivery.clarity}%</div>
+                              <div className="stat-value" style={{ fontSize: '0.9rem' }}>{scorecard.delivery?.clarity ?? 0}%</div>
                             </div>
                             <div className="stat-item">
                               <div className="stat-label" style={{ fontSize: '0.6rem' }}>Presence</div>
-                              <div className="stat-value" style={{ fontSize: '0.9rem' }}>{scorecard.delivery.presence}%</div>
+                              <div className="stat-value" style={{ fontSize: '0.9rem' }}>{scorecard.delivery?.presence ?? 0}%</div>
                             </div>
                           </div>
-                          <p style={{ fontSize: '0.75rem', margin: 0 }}><strong>Feedback:</strong> {scorecard.delivery.feedback}</p>
+                          <p style={{ fontSize: '0.75rem', margin: 0 }}><strong>Feedback:</strong> {scorecard.delivery?.feedback ?? 'No feedback available'}</p>
                         </div>
 
                         <div className="panel-summary-box" style={{ marginTop: '1rem' }}>
