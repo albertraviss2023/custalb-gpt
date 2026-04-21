@@ -1524,8 +1524,40 @@ function App() {
         setError('Microphone access was denied. Allow microphone permission and try again.')
         return
       }
+      if (rawError === 'aborted') {
+        // Common when recognition is stopped intentionally for auto-send or user stop.
+        setMicAccessState('ready')
+        return
+      }
+      if (rawError === 'no-speech') {
+        setMicAccessState('ready')
+        setError('No speech detected. Try again and speak clearly after tapping Voice.')
+        return
+      }
+      if (rawError === 'network') {
+        setMicAccessState('ready')
+        setError('Speech recognition network error. Retry in Chrome/Edge with internet access.')
+        void reportError('voice-input-network', event?.error ?? 'network', {
+          secure_context: window.isSecureContext,
+          user_agent: navigator.userAgent,
+        })
+        return
+      }
+      if (rawError === 'audio-capture') {
+        setMicAccessState('error')
+        setError('No working microphone detected. Check device input and browser mic settings.')
+        void reportError('voice-input-audio-capture', event?.error ?? 'audio-capture', {
+          secure_context: window.isSecureContext,
+          user_agent: navigator.userAgent,
+        })
+        return
+      }
       setMicAccessState('error')
       setError('Voice capture failed. Please try again.')
+      void reportError('voice-input-error', event?.error ?? 'unknown', {
+        secure_context: window.isSecureContext,
+        user_agent: navigator.userAgent,
+      })
     }
     recognition.onend = () => {
       setIsVoiceListening(false)
@@ -1533,6 +1565,9 @@ function App() {
       if (voicePauseTimerRef.current !== null) {
         window.clearTimeout(voicePauseTimerRef.current)
         voicePauseTimerRef.current = null
+      }
+      if (micAccessState !== 'denied' && micAccessState !== 'unsupported') {
+        setMicAccessState('ready')
       }
       if (voiceDraftRef.current.trim() && !isSendingRef.current && !voiceAutoSendingRef.current) {
         voiceAutoSendingRef.current = true
@@ -1544,6 +1579,7 @@ function App() {
     }
     speechRecognitionRef.current = recognition
     setIsVoiceListening(true)
+    setMicAccessState('ready')
     setError(null)
     void startVoiceMeter()
     try {
