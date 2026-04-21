@@ -1,0 +1,5 @@
+﻿[2026-04-21T22:38:07.2066325+03:00] python -m ruff check app tests
+All checks passed!
+
+[2026-04-21T22:38:07.3551192+03:00] python -m pytest -q
+.......................                                                  [100%]

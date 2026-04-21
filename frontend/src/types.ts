@@ -165,3 +165,12 @@ export interface ChatMemoryCompactionResponse {
   compaction_count: number
   token_estimate: number
 }
+
+export interface TtsSynthesisRequest {
+  text: string
+  speaker_name?: string
+  voice_id?: string
+  accent?: string
+  tone?: string
+  speaking_style?: string
+}

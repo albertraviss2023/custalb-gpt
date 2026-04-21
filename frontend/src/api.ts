@@ -13,6 +13,7 @@ import type {
   UploadChunkResponse,
   UploadRecord,
   UploadStartResponse,
+  TtsSynthesisRequest,
 } from './types'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
@@ -279,4 +280,18 @@ export async function completeChat(payload: ChatCompletionRequest, signal?: Abor
     signal,
   })
   return response.choices?.[0]?.message?.content ?? ''
+}
+
+export async function synthesizeLocalTts(payload: TtsSynthesisRequest, signal?: AbortSignal): Promise<Blob> {
+  const response = await fetch(`${API_BASE_URL}/v1/tts/speak`, {
+    method: 'POST',
+    headers: baseHeaders,
+    body: JSON.stringify(payload),
+    signal,
+  })
+  if (!response.ok) {
+    const body = await response.text()
+    throw new Error(asApiErrorMessage(body, 'Local TTS synthesis failed'))
+  }
+  return await response.blob()
 }

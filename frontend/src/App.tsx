@@ -20,6 +20,7 @@ import {
   setModelSelection,
   startUpload,
   streamChatCompletion,
+  synthesizeLocalTts,
   updateChat,
   uploadChunk,
 } from './api'
@@ -257,6 +258,7 @@ function App() {
   const [voiceDraft, setVoiceDraft] = useState('')
   const [showAdvancedSetup, setShowAdvancedSetup] = useState(false)
   const [activeSpeaker, setActiveSpeaker] = useState<string | null>(null)
+  const [micAccessState, setMicAccessState] = useState<'idle' | 'requesting' | 'ready' | 'denied' | 'unsupported' | 'error'>('idle')
   const [sessionTimeline, setSessionTimeline] = useState<InterviewTimelineStep[]>([])
   const [timelineCursor, setTimelineCursor] = useState(-1)
   const [timelineTargetId, setTimelineTargetId] = useState<string>('')
@@ -305,6 +307,9 @@ function App() {
   const interviewAutoConcludeRef = useRef(false)
   const timelineSnapshotsRef = useRef<Record<string, InterviewSessionSnapshot>>({})
   const ttsSessionRef = useRef(0)
+  const panelAudioRef = useRef<HTMLAudioElement | null>(null)
+  const panelAudioAbortRef = useRef<AbortController | null>(null)
+  const panelAudioObjectUrlsRef = useRef<string[]>([])
   const [voiceLevel, setVoiceLevel] = useState(0)
   const voiceMeterRafRef = useRef<number | null>(null)
   const voiceMeterContextRef = useRef<AudioContext | null>(null)
@@ -410,6 +415,12 @@ function App() {
   useEffect(() => {
     panelVoiceMapRef.current = {}
   }, [interviewPanelists, cbiTtsEnabled])
+
+  useEffect(() => {
+    if (cbiTtsEnabled) return
+    stopPanelAudioPlayback()
+    ttsSessionRef.current += 1
+  }, [cbiTtsEnabled])
 
   useEffect(() => {
     if (interviewSessionState === 'running') return
@@ -775,28 +786,9 @@ function App() {
     }
     setInterviewSessionState('paused')
     setActiveSpeaker(null)
-    window.speechSynthesis?.cancel()
+    stopPanelAudioPlayback()
     setTimelineCursor(sessionTimeline.findIndex((step) => step.id === stepId))
     setTimelineTargetId(stepId)
-  }
-
-  function toneToProsody(tone: PanelistTone, speakingStyle: SpeakingStyle): { rate: number; pitch: number; volume: number } {
-    const toneMap: Record<PanelistTone, { rate: number; pitch: number; volume: number }> = {
-      formal: { rate: 0.96, pitch: 0.95, volume: 0.98 },
-      probing: { rate: 0.98, pitch: 0.9, volume: 1 },
-      neutral: { rate: 1, pitch: 1, volume: 0.98 },
-      supportive: { rate: 0.94, pitch: 1.06, volume: 0.96 },
-      skeptical: { rate: 0.92, pitch: 0.88, volume: 0.99 },
-    }
-    const styleMap: Record<SpeakingStyle, number> = {
-      fast: 0.08,
-      structured: -0.03,
-      conversational: 0.02,
-      strict: -0.05,
-    }
-    const base = toneMap[tone]
-    const rate = Math.max(0.78, Math.min(1.18, base.rate + styleMap[speakingStyle]))
-    return { rate, pitch: base.pitch, volume: base.volume }
   }
 
   function splitSpeechChunks(text: string): string[] {
@@ -806,42 +798,74 @@ function App() {
     return chunks.length ? chunks : [normalized]
   }
 
-  function speakCbiSegments(segments: Array<{ speaker: string; text: string; nationality?: string; gender?: PanelistGender; accent?: AccentPreference }>) {
-    if (!segments.length) return
-    const synth = window.speechSynthesis
-    if (!synth) return
+  function stopPanelAudioPlayback() {
+    panelAudioAbortRef.current?.abort()
+    panelAudioAbortRef.current = null
+    if (panelAudioRef.current) {
+      panelAudioRef.current.pause()
+      panelAudioRef.current.src = ''
+      panelAudioRef.current = null
+    }
+    for (const url of panelAudioObjectUrlsRef.current) {
+      URL.revokeObjectURL(url)
+    }
+    panelAudioObjectUrlsRef.current = []
+    setActiveSpeaker(null)
+  }
+
+  async function speakCbiSegments(segments: Array<{ speaker: string; text: string; nationality?: string; gender?: PanelistGender; accent?: AccentPreference }>) {
+    if (!segments.length || !cbiTtsEnabled) return
     ttsSessionRef.current += 1
     const currentSession = ttsSessionRef.current
-    synth.cancel()
-    for (const segment of segments) {
-      const voice = getVoiceForSpeaker(segment.speaker, {
-        nationality: segment.nationality,
-        gender: segment.gender,
-        accent: segment.accent,
-      })
-      const panelist = getPanelistProfile(segment.speaker)
-      const prosody = toneToProsody(panelist.tone, panelist.speaking_style)
-      for (const chunk of splitSpeechChunks(segment.text)) {
-        const utter = new SpeechSynthesisUtterance(chunk)
-        utter.onstart = () => {
-          if (currentSession !== ttsSessionRef.current) return
+    stopPanelAudioPlayback()
+    const controller = new AbortController()
+    panelAudioAbortRef.current = controller
+    try {
+      for (const segment of segments) {
+        if (controller.signal.aborted || currentSession !== ttsSessionRef.current) break
+        const panelist = getPanelistProfile(segment.speaker)
+        const browserVoice = getVoiceForSpeaker(segment.speaker, {
+          nationality: segment.nationality,
+          gender: segment.gender,
+          accent: segment.accent,
+        })
+        for (const chunk of splitSpeechChunks(segment.text)) {
+          if (controller.signal.aborted || currentSession !== ttsSessionRef.current) break
           setActiveSpeaker(segment.speaker)
-        }
-        utter.onend = () => {
-          if (currentSession !== ttsSessionRef.current) return
-          if (!synth.speaking && !synth.pending) {
-            setActiveSpeaker(null)
+          const blob = await synthesizeLocalTts(
+            {
+              text: chunk,
+              speaker_name: segment.speaker,
+              voice_id: panelist.voice_id || browserVoice?.name || undefined,
+              accent: panelist.accent,
+              tone: panelist.tone,
+              speaking_style: panelist.speaking_style,
+            },
+            controller.signal,
+          )
+          const objectUrl = URL.createObjectURL(blob)
+          panelAudioObjectUrlsRef.current.push(objectUrl)
+          const audio = new Audio(objectUrl)
+          panelAudioRef.current = audio
+          await new Promise<void>((resolve, reject) => {
+            audio.onended = () => resolve()
+            audio.onerror = () => reject(new Error(`Failed to play local TTS audio for ${segment.speaker}`))
+            void audio.play().catch(reject)
+          })
+          if (panelAudioRef.current === audio) {
+            panelAudioRef.current = null
           }
         }
-        utter.onerror = () => {
-          if (currentSession !== ttsSessionRef.current) return
-          setActiveSpeaker(null)
-        }
-        if (voice) utter.voice = voice
-        utter.rate = prosody.rate
-        utter.pitch = prosody.pitch
-        utter.volume = prosody.volume
-        synth.speak(utter)
+      }
+    } catch (playbackError) {
+      await reportError('cbi-local-tts', playbackError, { provider: 'local', segment_count: segments.length })
+      setError('Panel audio is unavailable right now. Verify local TTS service is running.')
+    } finally {
+      if (panelAudioAbortRef.current === controller) {
+        panelAudioAbortRef.current = null
+      }
+      if (currentSession === ttsSessionRef.current) {
+        setActiveSpeaker(null)
       }
     }
   }
@@ -998,7 +1022,7 @@ function App() {
     setInterviewSessionState('paused')
     setActiveSpeaker(null)
     ttsSessionRef.current += 1
-    window.speechSynthesis?.cancel()
+    stopPanelAudioPlayback()
   }
 
   async function handleResumeFromTimeline() {
@@ -1019,7 +1043,7 @@ function App() {
     stopInterviewCamera()
     setActiveSpeaker(null)
     ttsSessionRef.current += 1
-    window.speechSynthesis?.cancel()
+    stopPanelAudioPlayback()
     const closingPrompt = reason === 'timeout'
       ? `Interview timer has reached ${interviewDurationMinutes} minutes. Conclude the panel and generate final CBI performance report now.`
       : 'End this interview now and generate final CBI performance report now.'
@@ -1224,7 +1248,7 @@ function App() {
     if (signature === lastSpokenSignatureRef.current) return
     const segments = parsePanelSpeechSegments(latestAssistant.content)
     if (!segments.length) return
-    speakCbiSegments(segments)
+    void speakCbiSegments(segments)
     lastSpokenSignatureRef.current = signature
   }, [messages, isCbiMode, cbiTtsEnabled, isSending, interviewSessionState, activeChatId, parsePanelSpeechSegments, speakCbiSegments])
 
@@ -1300,7 +1324,7 @@ function App() {
       stopVoiceMeter()
       stopInterviewCamera()
       speechRecognitionRef.current?.stop()
-      window.speechSynthesis?.cancel()
+      stopPanelAudioPlayback()
     }
     // bootstrap/selectChat are intentionally run once for initial route hydration.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1362,7 +1386,32 @@ function App() {
     setIsSending(false)
   }
 
-  function toggleVoiceInput() {
+  async function ensureMicrophoneAccess(): Promise<'ready' | 'denied' | 'unsupported' | 'error'> {
+    if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+      setMicAccessState('unsupported')
+      return 'unsupported'
+    }
+    setMicAccessState('requesting')
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      for (const track of stream.getTracks()) {
+        track.stop()
+      }
+      setMicAccessState('ready')
+      return 'ready'
+    } catch (error) {
+      const lowered = String(error).toLowerCase()
+      if (lowered.includes('notallowed') || lowered.includes('permission')) {
+        setMicAccessState('denied')
+        return 'denied'
+      } else {
+        setMicAccessState('error')
+        return 'error'
+      }
+    }
+  }
+
+  async function toggleVoiceInput() {
     if (interviewSessionState !== 'running') {
       setError('Start interview to enable voice input.')
       return
@@ -1374,6 +1423,7 @@ function App() {
     }
     const Recognition = maybeWindow.SpeechRecognition ?? maybeWindow.webkitSpeechRecognition
     if (!Recognition) {
+      setMicAccessState('unsupported')
       setError('Voice input is not supported in this browser.')
       return
     }
@@ -1392,6 +1442,18 @@ function App() {
           .finally(() => {
             voiceAutoSendingRef.current = false
           })
+      }
+      return
+    }
+
+    const accessState = await ensureMicrophoneAccess()
+    if (accessState !== 'ready') {
+      if (accessState === 'denied') {
+        setError('Microphone permission denied. Enable mic access in browser settings and retry.')
+      } else if (accessState === 'unsupported') {
+        setError('Microphone capture is not supported in this browser.')
+      } else {
+        setError('Could not initialize microphone. Check your input device and try again.')
       }
       return
     }
@@ -1440,9 +1502,11 @@ function App() {
       }
       const rawError = String(event?.error ?? '').toLowerCase()
       if (rawError === 'not-allowed' || rawError === 'service-not-allowed') {
+        setMicAccessState('denied')
         setError('Microphone access was denied. Allow microphone permission and try again.')
         return
       }
+      setMicAccessState('error')
       setError('Voice capture failed. Please try again.')
     }
     recognition.onend = () => {
@@ -2268,36 +2332,7 @@ function App() {
                   <div className="question-text">
                     {(() => {
                       if (interviewSessionState === 'idle') {
-                        return (
-                          <div className="idle-start-container" style={{ textAlign: 'center', padding: '1rem 0' }}>
-                            <p style={{ marginBottom: '1.5rem', fontSize: '0.9rem', color: '#718096' }}>The panel is ready. Click below to begin your competency-based interview.</p>
-                            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
-                              <button 
-                                className="primary-setup-btn" 
-                                onClick={() => void handleStartInterviewSession(false)}
-                                style={{ 
-                                  display: 'flex', 
-                                  alignItems: 'center', 
-                                  gap: '0.75rem', 
-                                  fontSize: '1.1rem',
-                                  padding: '0.75rem 2rem',
-                                  background: '#2f64e1'
-                                }}
-                              >
-                                <span style={{ fontSize: '1.2rem' }}>▶</span> Start Practice
-                              </button>
-                              {(messages.length > 0 || sessionTimeline.length > 0) && (
-                                <button 
-                                  className="primary-setup-btn" 
-                                  style={{ background: '#48bb78', padding: '0.75rem 1.5rem', fontSize: '1rem' }} 
-                                  onClick={() => void handleResumeFromTimeline()}
-                                >
-                                  Resume Interview
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        )
+                        return 'Panel is ready. Use Quick Start to begin or resume your interview session.'
                       }
 
                       const latestAssistant = [...messages].reverse().find(m => m.role === 'assistant')
@@ -2446,7 +2481,7 @@ function App() {
                       <div style={{ display: 'flex', gap: '0.5rem' }}>
                         <button
                           className={`voice-wave-btn ${isVoiceListening ? 'listening' : ''}`}
-                          onClick={toggleVoiceInput}
+                          onClick={() => { void toggleVoiceInput() }}
                           type="button"
                         >
                           <span className="wave-icon"><i style={{ height: `${5 + (voiceLevel * 7)}px` }} /><i style={{ height: `${6 + (voiceLevel * 11)}px` }} /><i style={{ height: `${4 + (voiceLevel * 9)}px` }} /></span>
@@ -2462,6 +2497,11 @@ function App() {
                     <strong>Draft:</strong> {voiceDraft || '...'}
                   </div>
                 ) : null}
+                {micAccessState !== 'idle' ? (
+                  <div className="voice-hint" style={{ marginTop: '0.5rem' }}>
+                    Mic: {micAccessState === 'requesting' ? 'requesting access...' : micAccessState}
+                  </div>
+                ) : null}
               </div>
             </footer>
 
@@ -2469,7 +2509,7 @@ function App() {
               <div className="quick-setup-overlay">
                 <div className="quick-setup-card">
                   <h2>Interview Room Ready</h2>
-                  <p>Prepare for a realistic competency-based interview. Configure the basics or use advanced setup.</p>
+                  <p>Set essentials quickly, then start. You can fine tune panel behavior in Advanced Setup.</p>
                   
                   <div className="quick-setup-grid">
                     <div className="setup-field">
@@ -2496,39 +2536,18 @@ function App() {
                     </div>
                   </div>
 
-                  <div className="setup-actions" style={{ flexDirection: 'column', gap: '1.25rem' }}>
-                    <button 
-                      className="primary-setup-btn" 
-                      onClick={() => void handleStartInterviewSession(false)}
-                      style={{ 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        justifyContent: 'center', 
-                        gap: '1rem', 
-                        fontSize: '1.25rem',
-                        padding: '1.25rem',
-                        background: '#2f64e1',
-                        boxShadow: '0 4px 14px rgba(47, 100, 225, 0.4)'
-                      }}
-                    >
-                      <span style={{ fontSize: '1.5rem' }}>▶</span> Start Practice Session
+                  <div className="setup-actions setup-actions-vertical">
+                    <button className="primary-setup-btn quick-start-btn" onClick={() => void handleStartInterviewSession(false)}>
+                      <span className="quick-start-icon">▶</span> Start Practice Session
                     </button>
-                    
-                    <div style={{ display: 'flex', gap: '1rem', width: '100%' }}>
+
+                    <div className="quick-setup-secondary-row">
                       {(messages.length > 0 || sessionTimeline.length > 0) && (
-                        <button 
-                          className="primary-setup-btn" 
-                          style={{ background: '#48bb78', flex: 1 }} 
-                          onClick={() => void handleResumeFromTimeline()}
-                        >
+                        <button className="secondary-btn quick-resume-btn" onClick={() => void handleResumeFromTimeline()}>
                           Resume Session
                         </button>
                       )}
-                      <button 
-                        className="secondary-btn" 
-                        style={{ padding: '1rem', flex: 1, fontSize: '0.9rem' }} 
-                        onClick={() => setShowAdvancedSetup(true)}
-                      >
+                      <button className="secondary-btn quick-advanced-btn" onClick={() => setShowAdvancedSetup(true)}>
                         Advanced Setup
                       </button>
                     </div>
