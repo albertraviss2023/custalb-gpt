@@ -458,6 +458,32 @@ function App() {
     }
   }, [interviewPanelists])
 
+  const resolvePanelistName = useCallback((rawSpeaker: string): string => {
+    const fallback = interviewPanelists[0]?.name || 'Panel'
+    const trimmed = (rawSpeaker || '').trim()
+    if (!trimmed) return fallback
+
+    const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+    const normalizedInput = normalize(trimmed)
+
+    const exact = interviewPanelists.find((panelist) => normalize(panelist.name) === normalizedInput)
+    if (exact) return exact.name
+
+    const fuzzy = interviewPanelists.find((panelist) => {
+      const normalizedPanelist = normalize(panelist.name)
+      return normalizedInput.includes(normalizedPanelist) || normalizedPanelist.includes(normalizedInput)
+    })
+    if (fuzzy) return fuzzy.name
+
+    const tokenFuzzy = interviewPanelists.find((panelist) => {
+      const tokens = normalize(panelist.name).split(' ').filter((token) => token.length > 2)
+      return tokens.some((token) => normalizedInput.includes(token))
+    })
+    if (tokenFuzzy) return tokenFuzzy.name
+
+    return trimmed
+  }, [interviewPanelists])
+
   function nationalityToLangPrefixes(nationality: string): string[] {
     const key = nationality.toLowerCase()
     if (key.includes('brit')) return ['en-gb']
@@ -584,12 +610,15 @@ function App() {
     let pendingGender: PanelistGender | undefined
     let pendingAccent: AccentPreference | undefined
     const genericSpeakerMap: Record<string, string> = {
-      Chair: 'Amina Okello',
-      Panelist: 'David Mwesige',
-      Interviewer: 'Sarah Nambatya',
-      Panel: 'Michael Kato',
+      Chair: interviewPanelists[0]?.name || 'Panel',
+      Panelist: interviewPanelists[1]?.name || interviewPanelists[0]?.name || 'Panel',
+      Interviewer: interviewPanelists[0]?.name || 'Panel',
+      Panel: interviewPanelists[0]?.name || 'Panel',
     }
-    const normalizeSpeaker = (rawSpeaker: string) => genericSpeakerMap[rawSpeaker] ?? rawSpeaker
+    const normalizeSpeaker = (rawSpeaker: string) => {
+      const mapped = genericSpeakerMap[rawSpeaker] ?? rawSpeaker
+      return resolvePanelistName(mapped)
+    }
 
     for (const line of lines) {
       if (line.startsWith('CBI_SCORECARD_JSON:')) break
@@ -614,8 +643,9 @@ function App() {
           const nationality = panelist.nationality || PANEL_NATIONALITY_PREF[normalized]
           segments.push({ speaker: normalized, text: withSpeaker[2].trim(), nationality, gender: panelist.gender, accent: panelist.accent })
         } else if (body) {
-          const chair = getPanelistProfile('Amina Okello')
-          segments.push({ speaker: 'Amina Okello', text: body, nationality: chair.nationality, gender: chair.gender, accent: chair.accent })
+          const chairName = resolvePanelistName(interviewPanelists[0]?.name || 'Panel')
+          const chair = getPanelistProfile(chairName)
+          segments.push({ speaker: chairName, text: body, nationality: chair.nationality, gender: chair.gender, accent: chair.accent })
         }
         pendingSpeaker = null
         pendingNationality = undefined
@@ -651,10 +681,13 @@ function App() {
 
     if (segments.length === 0) {
       const readable = content.split('CBI_SCORECARD_JSON:')[0].trim().slice(0, 500)
-      if (readable) segments.push({ speaker: 'Panel', text: readable, nationality: '', gender: 'unknown', accent: 'auto' })
+      if (readable) {
+        const fallbackSpeaker = resolvePanelistName(interviewPanelists[0]?.name || 'Panel')
+        segments.push({ speaker: fallbackSpeaker, text: readable, nationality: '', gender: 'unknown', accent: 'auto' })
+      }
     }
     return segments
-  }, [getPanelistProfile])
+  }, [getPanelistProfile, interviewPanelists, resolvePanelistName])
 
   function extractCbiScorecard(content: string): CbiScorecard | null {
     const marker = 'CBI_SCORECARD_JSON:'
@@ -823,19 +856,20 @@ function App() {
     try {
       for (const segment of segments) {
         if (controller.signal.aborted || currentSession !== ttsSessionRef.current) break
-        const panelist = getPanelistProfile(segment.speaker)
-        const browserVoice = getVoiceForSpeaker(segment.speaker, {
+        const resolvedSpeaker = resolvePanelistName(segment.speaker)
+        const panelist = getPanelistProfile(resolvedSpeaker)
+        const browserVoice = getVoiceForSpeaker(resolvedSpeaker, {
           nationality: segment.nationality,
           gender: segment.gender,
           accent: segment.accent,
         })
         for (const chunk of splitSpeechChunks(segment.text)) {
           if (controller.signal.aborted || currentSession !== ttsSessionRef.current) break
-          setActiveSpeaker(segment.speaker)
+          setActiveSpeaker(resolvedSpeaker)
           const blob = await synthesizeLocalTts(
             {
               text: chunk,
-              speaker_name: segment.speaker,
+              speaker_name: resolvedSpeaker,
               voice_id: panelist.voice_id || browserVoice?.name || undefined,
               accent: panelist.accent,
               tone: panelist.tone,
@@ -849,7 +883,7 @@ function App() {
           panelAudioRef.current = audio
           await new Promise<void>((resolve, reject) => {
             audio.onended = () => resolve()
-            audio.onerror = () => reject(new Error(`Failed to play local TTS audio for ${segment.speaker}`))
+            audio.onerror = () => reject(new Error(`Failed to play local TTS audio for ${resolvedSpeaker}`))
             void audio.play().catch(reject)
           })
           if (panelAudioRef.current === audio) {
