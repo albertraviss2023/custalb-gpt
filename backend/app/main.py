@@ -9,12 +9,18 @@ from app.api.routes.chats import router as chats_router
 from app.api.routes.completions import router as completions_router
 from app.api.routes.health import router as health_router
 from app.api.routes.models import router as models_router
+from app.api.routes.logs import router as logs_router
+from app.api.routes.telemetry import router as telemetry_router
 from app.core.settings import settings
 from app.db.database import create_connection, initialize_database
 from app.db.repository import Repository
 from app.services.chat_service import ChatService
+from app.services.addon_store import AddonStore
 from app.services.model_registry import ModelRegistry
-from app.services.ollama_client import OllamaClient
+from app.services.message_cipher import MessageCipher
+from app.services.vllm_client import VLLMClient
+from app.api.routes.addons import router as addons_router
+from app.api.routes.files import router as files_router
 
 
 @asynccontextmanager
@@ -25,25 +31,34 @@ async def lifespan(app: FastAPI):
     connection = create_connection(settings.resolved_database_path())
     initialize_database(connection)
 
-    repository = Repository(connection)
+    cipher: MessageCipher | None = None
+    if settings.chat_encryption_enabled:
+        if not settings.chat_encryption_key:
+            raise ValueError("GOI_CHAT_ENCRYPTION_ENABLED=true requires GOI_CHAT_ENCRYPTION_KEY")
+        cipher = MessageCipher.from_optional_key(settings.chat_encryption_key)
+
+    repository = Repository(connection, message_cipher=cipher)
     if not model_registry.exists(repository.get_default_model_id(model_registry.default_model_id)):
         repository.set_default_model_id(model_registry.default_model_id)
 
-    ollama_client = OllamaClient(
-        base_url=settings.ollama_base_url,
-        timeout_seconds=settings.ollama_request_timeout_seconds,
+    vllm_client = VLLMClient(
+        base_url=settings.vllm_base_url,
+        timeout_seconds=settings.vllm_request_timeout_seconds,
     )
+    addon_store = AddonStore()
 
     chat_service = ChatService(
         repository=repository,
         model_registry=model_registry,
-        ollama_client=ollama_client,
+        inference_client=vllm_client,
+        addon_store=addon_store,
     )
 
     app.state.model_registry = model_registry
     app.state.repository = repository
-    app.state.ollama_client = ollama_client
+    app.state.vllm_client = vllm_client
     app.state.chat_service = chat_service
+    app.state.addon_store = addon_store
 
     try:
         yield
@@ -65,3 +80,7 @@ app.include_router(health_router)
 app.include_router(models_router)
 app.include_router(chats_router)
 app.include_router(completions_router)
+app.include_router(addons_router)
+app.include_router(files_router)
+app.include_router(logs_router)
+app.include_router(telemetry_router)

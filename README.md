@@ -10,9 +10,10 @@ Production-oriented local-first assistant stack with:
 
 ## Hardware Target
 
+
 - Zenbiok Pro Duo
 - 32 GB RAM
-- NVIDIA RTX 3070 Ti (8 GB VRAM)
+- NVIDIA RTX 3070 Ti (8 GB VRAM)his feature here for the competency based interview coach add on, reviw and implement it: 
 
 ## Project Structure
 
@@ -34,7 +35,11 @@ docker compose -f infra/docker-compose.yml up --build -d
 Model bootstrap:
 
 ```powershell
+# Required for gated Hugging Face models (Gemma):
+$env:HF_TOKEN="hf_xxx"
 ./scripts/bootstrap-models.ps1
+# Or a single model only:
+./scripts/bootstrap-models.ps1 -Model "google/gemma-4-E4B-it"
 ```
 
 Endpoints:

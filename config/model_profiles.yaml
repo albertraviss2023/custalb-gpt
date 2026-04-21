@@ -1,66 +1,139 @@
-version: 1
+﻿version: 1
 
 selector:
-  default_model_id: gemma4_e4b_8bit
+  default_model_id: gemma4_e2b_vllm
   allow_per_chat_override: true
   persist_selection_per_chat: true
   hot_switch_enabled: true
   unload_inactive_after_minutes: 20
 
 models:
-  - id: gemma4_e4b_16bit
-    display_name: Gemma 4 E4B 16-bit
-    quantization: bf16
-    tier: balanced_quality
-    description: Highest-fidelity E4B profile. Slower on 8GB VRAM due to offload.
+  - id: gemma4_e2b_vllm
+    display_name: Gemma E2B (vLLM)
+    quantization: fp8_kv
+    tier: fast
+    description: Fast Gemma lane on vLLM with fp8 KV cache.
     runtime:
       backend: local_runtime
-      model_ref: google/gemma-4-E4B-it
+      model_ref: gemma4:e2b-vllm
+      precision: bf16
+      availability_refs: [gemma-fast-vllm]
+    limits:
+      max_context_tokens: 1024
+      max_output_tokens: 512
+
+  - id: gemma4_e4b_vllm
+    display_name: Gemma E4B (vLLM)
+    quantization: fp8_kv
+    tier: balanced_quality
+    description: Balanced Gemma lane on vLLM with fp8 KV cache.
+    runtime:
+      backend: local_runtime
+      model_ref: gemma4:e4b-vllm
       precision: bf16
     limits:
-      max_context_tokens: 8192
-      max_output_tokens: 1024
-    startup:
-      prewarm: false
-      gpu_offload: partial
+      max_context_tokens: 2048
+      max_output_tokens: 2048
 
-  - id: gemma4_e4b_8bit
-    display_name: Gemma 4 E4B 8-bit
-    quantization: sfp8
-    tier: default
-    description: Best daily balance of quality and speed on this laptop.
+  - id: gemma4_26b_vllm
+    display_name: Gemma 26B (vLLM)
+    quantization: fp8_kv
+    tier: deep_quality
+    description: Deep Gemma lane on vLLM with cpu offload and fp8 KV cache.
+    runtime:
+      backend: local_runtime
+      model_ref: gemma4:26b-vllm
+      precision: bf16
+    limits:
+      max_context_tokens: 2048
+      max_output_tokens: 2048
+
+  - id: gemma4_e2b_ollama
+    display_name: Gemma 4 E2B (Ollama)
+    quantization: q4
+    tier: fast_fallback
+    description: Ollama fallback lane for E2B.
+    runtime:
+      backend: local_runtime
+      model_ref: gemma4:e2b
+      precision: int4
+    limits:
+      max_context_tokens: 1024
+      max_output_tokens: 512
+
+  - id: gemma4_e4b_ollama
+    display_name: Gemma 4 E4B (Ollama)
+    quantization: q4
+    tier: balanced_fallback
+    description: Ollama fallback lane for E4B.
     runtime:
       backend: local_runtime
       model_ref: gemma4:e4b
-      precision: int8
+      precision: int4
     limits:
-      max_context_tokens: 16384
-      max_output_tokens: 1024
-    startup:
-      prewarm: true
-      gpu_offload: auto
+      max_context_tokens: 1024
+      max_output_tokens: 512
 
-  - id: gemma4_26b_a4b_4bit
-    display_name: Gemma 4 26B A4B 4-bit
+  - id: gemma4_26b_ollama
+    display_name: Gemma 4 26B (Ollama)
     quantization: q4
-    tier: deep_quality
-    description: Highest quality mode on this laptop, with slower responses.
+    tier: deep_fallback
+    description: Ollama fallback lane for 26B.
     runtime:
       backend: local_runtime
       model_ref: gemma4:26b
       precision: int4
     limits:
-      max_context_tokens: 8192
-      max_output_tokens: 768
-    startup:
-      prewarm: false
-      gpu_offload: hybrid_ram_vram
+      max_context_tokens: 1024
+      max_output_tokens: 512
+
+  - id: qwen_fast_ollama
+    display_name: Qwen Fast (Ollama)
+    quantization: q4
+    tier: fast_alt
+    description: Fast Qwen profile served by Ollama.
+    runtime:
+      backend: local_runtime
+      model_ref: qwen-fast-ollama
+      precision: int4
+    limits:
+      max_context_tokens: 1024
+      max_output_tokens: 512
+
+  - id: qwen_fast_vllm
+    display_name: Qwen Fast (vLLM)
+    quantization: bf16
+    tier: fast_alt
+    description: Fast Qwen profile served by vLLM for A/B comparison.
+    runtime:
+      backend: local_runtime
+      model_ref: qwen-fast-vllm
+      precision: bf16
+    limits:
+      max_context_tokens: 1024
+      max_output_tokens: 512
+
+  - id: gemma_vllm_fast
+    display_name: Gemma Fast (vLLM)
+    quantization: fp8_kv
+    tier: fast_alt
+    description: Fast Gemma profile served by vLLM for engine A/B comparison.
+    runtime:
+      backend: local_runtime
+      model_ref: gemma4:e2b-vllm
+      precision: bf16
+      availability_refs: [gemma-fast-vllm]
+    limits:
+      max_context_tokens: 1024
+      max_output_tokens: 512
 
 routing:
   on_oom: fallback_to_next_tier
   fallback_order:
-    - gemma4_e4b_8bit
-    - gemma4_e4b_16bit
-    - gemma4_26b_a4b_4bit
-  on_timeout_seconds: 90
-  timeout_fallback_to: gemma4_e4b_8bit
+    - gemma4_e2b_vllm
+    - gemma4_e4b_vllm
+    - qwen_fast_vllm
+    - gemma4_e2b_ollama
+    - qwen_fast_ollama
+  on_timeout_seconds: 120
+  timeout_fallback_to: gemma4_e2b_vllm

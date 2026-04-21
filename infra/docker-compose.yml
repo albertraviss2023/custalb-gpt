@@ -1,22 +1,140 @@
-name: personal-goi
+﻿name: personal-goi
 
 services:
   ollama:
     image: ollama/ollama:latest
     container_name: goi-ollama
     restart: unless-stopped
-    ports:
-      - "11434:11434"
+    environment:
+      OLLAMA_CONTEXT_LENGTH: 4096
+      OLLAMA_FLASH_ATTENTION: "1"
+      OLLAMA_KV_CACHE_TYPE: q8_0
+      OLLAMA_KEEP_ALIVE: "0"
+      OLLAMA_MAX_LOADED_MODELS: 1
+      OLLAMA_NUM_PARALLEL: 1
     volumes:
       - ollama-data:/root/.ollama
-    environment:
-      OLLAMA_KEEP_ALIVE: 24h
-    gpus: all
+    ports:
+      - "11434:11434"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     healthcheck:
       test: ["CMD", "ollama", "list"]
       interval: 30s
       timeout: 10s
-      retries: 5
+      retries: 10
+
+  model-router:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: goi-model-router
+    restart: unless-stopped
+    ports:
+      - "8000:4000"
+    environment:
+      - LITELLM_LOG=ERROR
+    volumes:
+      - ../config/litellm_config.yaml:/app/config.yaml
+    command: --config /app/config.yaml
+    depends_on:
+      ollama:
+        condition: service_healthy
+
+  vllm-qwen:
+    image: vllm/vllm-openai:latest
+    container_name: goi-vllm-qwen
+    restart: unless-stopped
+    environment:
+      HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN:-}
+      HF_TOKEN: ${HF_TOKEN:-}
+    volumes:
+      - vllm-data:/root/.cache/huggingface
+    command: --model Qwen/Qwen2.5-3B-Instruct --gpu-memory-utilization 0.86 --max-model-len 1024 --kv-cache-dtype fp8 --max-num-seqs 2
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/v1/models"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+
+  vllm-gemma-e2b:
+    image: vllm/vllm-openai:latest
+    container_name: goi-vllm-gemma-e2b
+    restart: unless-stopped
+    environment:
+      HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN:-}
+      HF_TOKEN: ${HF_TOKEN:-}
+    volumes:
+      - vllm-data:/root/.cache/huggingface
+    command: --model google/gemma-2-2b-it --gpu-memory-utilization 0.86 --max-model-len 1024 --kv-cache-dtype fp8 --max-num-seqs 2
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/v1/models"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+
+  vllm-gemma-e4b:
+    image: vllm/vllm-openai:latest
+    container_name: goi-vllm-gemma-e4b
+    restart: unless-stopped
+    environment:
+      HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN:-}
+      HF_TOKEN: ${HF_TOKEN:-}
+    volumes:
+      - vllm-data:/root/.cache/huggingface
+    command: --model google/gemma-2-9b-it --gpu-memory-utilization 0.82 --max-model-len 2048 --kv-cache-dtype fp8 --max-num-seqs 1 --cpu-offload-gb 10
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/v1/models"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+
+  vllm-gemma-26b:
+    image: vllm/vllm-openai:latest
+    container_name: goi-vllm-gemma-26b
+    restart: unless-stopped
+    environment:
+      HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN:-}
+      HF_TOKEN: ${HF_TOKEN:-}
+    volumes:
+      - vllm-data:/root/.cache/huggingface
+    command: --model google/gemma-2-27b-it --gpu-memory-utilization 0.78 --max-model-len 2048 --kv-cache-dtype fp8 --max-num-seqs 1 --cpu-offload-gb 18 --enforce-eager
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/v1/models"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
 
   api:
     build:
@@ -25,18 +143,17 @@ services:
     container_name: goi-api
     restart: unless-stopped
     environment:
-      GOI_OLLAMA_BASE_URL: http://ollama:11434
+      GOI_VLLM_BASE_URL: http://model-router:4000
       GOI_DATABASE_PATH: /app/data/app.db
       GOI_MODEL_PROFILES_PATH: /app/config/model_profiles.yaml
-      GOI_OLLAMA_REQUEST_TIMEOUT_SECONDS: 180
+      GOI_VLLM_REQUEST_TIMEOUT_SECONDS: 300
     volumes:
       - api-data:/app/data
       - ../config:/app/config:ro
     depends_on:
-      ollama:
-        condition: service_healthy
+      - model-router
     ports:
-      - "8000:8000"
+      - "8001:8000"
 
   ui:
     build:
@@ -53,4 +170,7 @@ services:
 
 volumes:
   ollama-data:
+  vllm-data:
+    external: true
+    name: personal-goi_vllm-data
   api-data:

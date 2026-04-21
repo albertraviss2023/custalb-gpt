@@ -17,8 +17,16 @@ docker compose -f infra/docker-compose.yml up --build -d
 Bootstrap models:
 
 ```powershell
+$env:HF_TOKEN="hf_xxx"
 ./scripts/bootstrap-models.ps1
+# Optional single-model pull:
+./scripts/bootstrap-models.ps1 -Model "Qwen/Qwen2.5-14B-Instruct"
 ```
+
+Notes:
+
+- `HF_TOKEN` (or `HUGGINGFACE_HUB_TOKEN`) is required for gated Hugging Face models such as Gemma 4.
+- Ensure the token account has accepted access for `google/gemma-4-E4B-it`.
 
 Open UI:
 

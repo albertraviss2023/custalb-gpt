@@ -8,6 +8,8 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}/backend
     defaults:
       run:
         working-directory: backend
@@ -25,6 +27,9 @@ jobs:
         run: ruff check app tests
       - name: Test
         run: pytest
+
+      - name: API Smoke (In-Process)
+        run: pytest tests/test_models_route.py tests/test_repository_encryption.py
 
   frontend:
     runs-on: ubuntu-latest

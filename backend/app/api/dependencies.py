@@ -4,8 +4,9 @@ from fastapi import Request
 
 from app.db.repository import Repository
 from app.services.chat_service import ChatService
+from app.services.addon_store import AddonStore
 from app.services.model_registry import ModelRegistry
-from app.services.ollama_client import OllamaClient
+from app.services.vllm_client import VLLMClient
 
 
 def get_repository(request: Request) -> Repository:
@@ -16,9 +17,13 @@ def get_model_registry(request: Request) -> ModelRegistry:
     return request.app.state.model_registry
 
 
-def get_ollama_client(request: Request) -> OllamaClient:
-    return request.app.state.ollama_client
+def get_vllm_client(request: Request) -> VLLMClient:
+    return request.app.state.vllm_client
 
 
 def get_chat_service(request: Request) -> ChatService:
     return request.app.state.chat_service
+
+
+def get_addon_store(request: Request) -> AddonStore:
+    return request.app.state.addon_store

@@ -38,42 +38,84 @@ async def chat_completions(
 
     if payload.stream:
         async def event_generator() -> AsyncIterator[str]:
-            async for event in chat_service.stream_complete(payload):
-                if event["type"] == "token":
-                    chunk = {
+            try:
+                async for event in chat_service.stream_complete(payload):
+                    if event["type"] == "token":
+                        chunk = {
+                            "id": completion_id,
+                            "object": "chat.completion.chunk",
+                            "created": created_at,
+                            "model": event["used_model_id"],
+                            "choices": [
+                                {
+                                    "index": 0,
+                                    "delta": {"content": event["token"]},
+                                    "finish_reason": None,
+                                }
+                            ],
+                        }
+                        yield _sse_line(chunk)
+                    elif event["type"] == "done":
+                        final_chunk = {
+                            "id": completion_id,
+                            "object": "chat.completion.chunk",
+                            "created": event["created"],
+                            "model": event["used_model_id"],
+                            "choices": [
+                                {
+                                    "index": 0,
+                                    "delta": {},
+                                    "finish_reason": "stop",
+                                }
+                            ],
+                            "metadata": {
+                                "fallback_reason": event["fallback_reason"],
+                                "attempted_models": event["attempted_models"],
+                                "usage": event["usage"],
+                                "telemetry": event.get("telemetry", {}),
+                            },
+                        }
+                        yield _sse_line(final_chunk)
+                        yield _sse_line("[DONE]")
+            except Exception:
+                try:
+                    recovery = await chat_service.complete(payload.model_copy(update={"stream": False}))
+                    recovery_chunk = {
                         "id": completion_id,
                         "object": "chat.completion.chunk",
-                        "created": created_at,
-                        "model": event["used_model_id"],
+                        "created": int(time.time()),
+                        "model": recovery.used_model_id,
                         "choices": [
                             {
                                 "index": 0,
-                                "delta": {"content": event["token"]},
+                                "delta": {"content": recovery.text},
                                 "finish_reason": None,
                             }
                         ],
+                        "metadata": {
+                            "stream_error": True,
+                            "recovered_via_non_stream": True,
+                            "attempted_models": recovery.attempted_models,
+                        },
                     }
-                    yield _sse_line(chunk)
-                elif event["type"] == "done":
-                    final_chunk = {
+                    yield _sse_line(recovery_chunk)
+                    yield _sse_line("[DONE]")
+                except Exception:
+                    error_chunk = {
                         "id": completion_id,
                         "object": "chat.completion.chunk",
-                        "created": event["created"],
-                        "model": event["used_model_id"],
+                        "created": int(time.time()),
+                        "model": payload.model or "unknown",
                         "choices": [
                             {
                                 "index": 0,
-                                "delta": {},
-                                "finish_reason": "stop",
+                                "delta": {"content": "I hit a streaming error. Please resend once and I will retry."},
+                                "finish_reason": None,
                             }
                         ],
-                        "metadata": {
-                            "fallback_reason": event["fallback_reason"],
-                            "attempted_models": event["attempted_models"],
-                            "usage": event["usage"],
-                        },
+                        "metadata": {"stream_error": True},
                     }
-                    yield _sse_line(final_chunk)
+                    yield _sse_line(error_chunk)
                     yield _sse_line("[DONE]")
 
         return StreamingResponse(event_generator(), media_type="text/event-stream")
@@ -94,6 +136,7 @@ async def chat_completions(
         metadata={
             "fallback_reason": result.fallback_reason,
             "attempted_models": result.attempted_models,
+            "telemetry": result.telemetry,
         },
     )
     return response

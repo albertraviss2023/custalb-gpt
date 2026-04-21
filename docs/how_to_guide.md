@@ -14,7 +14,10 @@ docker compose -f infra/docker-compose.yml up --build -d
 Then preload models:
 
 ```powershell
+$env:HF_TOKEN="hf_xxx"
 ./scripts/bootstrap-models.ps1
+# Optional single-model pull:
+./scripts/bootstrap-models.ps1 -Model "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B"
 ```
 
 Open:
@@ -113,8 +116,8 @@ kubectl get svc -n personal-goi
 ## 7. Troubleshooting Quick Checks
 
 - API health: `GET /health`
-- Ollama readiness: verify `ollama` container/pod is healthy
-- Missing model: run bootstrap model pull again
+- vLLM readiness: verify `goi-vllm-gemma` / `goi-vllm-deepseek` containers are healthy
+- Missing model: set `HF_TOKEN`, confirm access to gated models, then run bootstrap again
 - Slow responses: switch to E4B 8-bit or reduce context size
 
 ## 8. Security Mode
@@ -123,3 +126,11 @@ To enable API key protection:
 
 - Set `GOI_API_KEY` in backend environment.
 - Call API with `Authorization: Bearer <key>`.
+
+To enable chat encryption at rest:
+
+- Set `GOI_CHAT_ENCRYPTION_ENABLED=true`.
+- Generate a Fernet key and set `GOI_CHAT_ENCRYPTION_KEY`.
+- Example key generation:
+  - `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
+- Keep the same key for existing encrypted chats; changing it without migration makes old chats undecryptable.

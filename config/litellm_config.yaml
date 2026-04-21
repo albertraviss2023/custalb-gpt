@@ -1,0 +1,50 @@
+model_list:
+  - model_name: gemma4:e2b-vllm
+    litellm_params:
+      model: openai/google/gemma-2-2b-it
+      api_base: http://vllm-gemma-e2b:8000/v1
+      api_key: "not-needed"
+  - model_name: gemma4:e4b-vllm
+    litellm_params:
+      model: openai/google/gemma-2-9b-it
+      api_base: http://vllm-gemma-e4b:8000/v1
+      api_key: "not-needed"
+  - model_name: gemma4:26b-vllm
+    litellm_params:
+      model: openai/google/gemma-2-27b-it
+      api_base: http://vllm-gemma-26b:8000/v1
+      api_key: "not-needed"
+  - model_name: gemma4:e2b
+    litellm_params:
+      model: ollama_chat/gemma4:e2b
+      api_base: http://ollama:11434
+      api_key: "not-needed"
+  - model_name: gemma4:e4b
+    litellm_params:
+      model: ollama_chat/gemma4:e4b
+      api_base: http://ollama:11434
+      api_key: "not-needed"
+  - model_name: gemma4:26b
+    litellm_params:
+      model: ollama_chat/gemma4:26b
+      api_base: http://ollama:11434
+      api_key: "not-needed"
+  - model_name: qwen-fast-ollama
+    litellm_params:
+      model: ollama_chat/qwen2.5:3b
+      api_base: http://ollama:11434
+      api_key: "not-needed"
+  - model_name: qwen-fast-vllm
+    litellm_params:
+      model: openai/Qwen/Qwen2.5-3B-Instruct
+      api_base: http://vllm-qwen:8000/v1
+      api_key: "not-needed"
+  - model_name: gemma-fast-vllm
+    litellm_params:
+      model: openai/google/gemma-2-2b-it
+      api_base: http://vllm-gemma-e2b:8000/v1
+      api_key: "not-needed"
+
+litellm_settings:
+  drop_params: true
+  set_verbose: false

@@ -1,10 +1,18 @@
 import type {
+  AddonCatalogResponse,
+  AddonInstallResponse,
   ChatCompletionRequest,
   ChatDetail,
   ChatSummary,
   ModelSelectionResponse,
   ModelsResponse,
   StreamChunk,
+  LogEventRecord,
+  ChatTelemetryResponse,
+  ChatMemoryCompactionResponse,
+  UploadChunkResponse,
+  UploadRecord,
+  UploadStartResponse,
 } from './types'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
@@ -18,6 +26,23 @@ if (API_KEY) {
   baseHeaders.Authorization = `Bearer ${API_KEY}`
 }
 
+export function asApiErrorMessage(raw: string, fallback: string): string {
+  if (!raw) return fallback
+  try {
+    const parsed = JSON.parse(raw) as { detail?: string | { error?: string } }
+    if (typeof parsed.detail === 'string') {
+      return parsed.detail
+    }
+    if (parsed.detail && typeof parsed.detail === 'object' && 'error' in parsed.detail) {
+      const errorText = parsed.detail.error
+      if (typeof errorText === 'string') return errorText
+    }
+  } catch {
+    // keep raw
+  }
+  return raw
+}
+
 async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
@@ -29,7 +54,7 @@ async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> 
 
   if (!response.ok) {
     const body = await response.text()
-    throw new Error(body || `Request failed: ${response.status}`)
+    throw new Error(asApiErrorMessage(body, `Request failed: ${response.status}`))
   }
 
   if (response.status === 204) {
@@ -40,7 +65,7 @@ async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> 
 }
 
 export function getHealth() {
-  return requestJson<{ status: string; ollama_reachable: boolean }>('/health')
+  return requestJson<{ status: string; runtime_reachable: boolean }>('/health')
 }
 
 export function listModels() {
@@ -62,7 +87,12 @@ export function listChats() {
   return requestJson<ChatSummary[]>('/v1/chats')
 }
 
-export function createChat(payload: { title?: string; selected_model_id?: string }) {
+export function createChat(payload: {
+  title?: string
+  selected_model_id?: string
+  inherit_from_chat_id?: string
+  inherit_recent_messages?: number
+}) {
   return requestJson<ChatSummary>('/v1/chats', {
     method: 'POST',
     body: JSON.stringify(payload),
@@ -89,19 +119,112 @@ export function deleteChat(chatId: string) {
   })
 }
 
+export function compactChatMemory(chatId: string, forgetMessageIds: string[]) {
+  return requestJson<ChatMemoryCompactionResponse>(`/v1/chats/${chatId}/memory/compact`, {
+    method: 'POST',
+    body: JSON.stringify({ forget_message_ids: forgetMessageIds }),
+  })
+}
+
+export function listAddonCatalog() {
+  return requestJson<AddonCatalogResponse>('/v1/addons/catalog')
+}
+
+export function listInstalledAddons() {
+  return requestJson<AddonInstallResponse[]>('/v1/addons/installed')
+}
+
+export function installAddon(addonId: string) {
+  return requestJson<AddonInstallResponse>('/v1/addons/install', {
+    method: 'POST',
+    body: JSON.stringify({ addon_id: addonId }),
+  })
+}
+
+export function uninstallAddon(addonId: string) {
+  return requestJson<AddonInstallResponse>('/v1/addons/uninstall', {
+    method: 'POST',
+    body: JSON.stringify({ addon_id: addonId }),
+  })
+}
+
+export function startUpload(payload: { filename: string; total_size_bytes: number; mime_type?: string }) {
+  return requestJson<UploadStartResponse>('/v1/files/uploads/start', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function uploadChunk(
+  uploadId: string,
+  chunk: Blob,
+  offset: number,
+  isFinal: boolean,
+): Promise<UploadChunkResponse> {
+  const headers: HeadersInit = {
+    ...(API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {}),
+    'X-Upload-Offset': String(offset),
+    'X-Upload-Complete': isFinal ? 'true' : 'false',
+  }
+  const response = await fetch(`${API_BASE_URL}/v1/files/uploads/${uploadId}/chunk`, {
+    method: 'PUT',
+    headers,
+    body: chunk,
+  })
+
+  if (!response.ok) {
+    const body = await response.text()
+    throw new Error(asApiErrorMessage(body, `Upload failed: ${response.status}`))
+  }
+  return (await response.json()) as UploadChunkResponse
+}
+
+export function listUploads() {
+  return requestJson<UploadRecord[]>('/v1/files/uploads')
+}
+
+export function deleteUpload(uploadId: string) {
+  return requestJson<void>(`/v1/files/uploads/${uploadId}`, {
+    method: 'DELETE',
+  })
+}
+
+export function listLogEvents(limit = 100) {
+  return requestJson<LogEventRecord[]>(`/v1/logs/events?limit=${encodeURIComponent(String(limit))}`)
+}
+
+export function createLogEvent(payload: {
+  level: 'debug' | 'info' | 'warning' | 'error'
+  source: string
+  message: string
+  chat_id?: string
+  context?: Record<string, unknown>
+}) {
+  return requestJson<LogEventRecord>('/v1/logs/events', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function getChatTelemetry(chatId: string) {
+  return requestJson<ChatTelemetryResponse>(`/v1/chats/${chatId}/telemetry`)
+}
+
 export async function streamChatCompletion(
   payload: ChatCompletionRequest,
   onChunk: (chunk: StreamChunk) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/v1/chat/completions`, {
     method: 'POST',
     headers: baseHeaders,
     body: JSON.stringify({ ...payload, stream: true }),
+    signal,
   })
 
   if (!response.ok || !response.body) {
     const body = await response.text()
-    throw new Error(body || 'Streaming request failed')
+    throw new Error(asApiErrorMessage(body, 'Streaming request failed'))
   }
 
   const reader = response.body.getReader()
@@ -145,4 +268,15 @@ export async function streamChatCompletion(
       separator = buffer.indexOf('\n\n')
     }
   }
+}
+
+export async function completeChat(payload: ChatCompletionRequest, signal?: AbortSignal): Promise<string> {
+  const response = await requestJson<{
+    choices?: Array<{ message?: { content?: string } }>
+  }>('/v1/chat/completions', {
+    method: 'POST',
+    body: JSON.stringify({ ...payload, stream: false }),
+    signal,
+  })
+  return response.choices?.[0]?.message?.content ?? ''
 }

@@ -14,6 +14,7 @@ class RuntimeConfig:
     backend: str
     model_ref: str
     precision: str
+    availability_refs: list[str]
 
 
 @dataclass(slots=True)
@@ -76,6 +77,7 @@ class ModelRegistry:
                     backend=str(runtime.get("backend", "local_runtime")),
                     model_ref=str(runtime.get("model_ref", "")),
                     precision=str(runtime.get("precision", "unknown")),
+                    availability_refs=[str(value) for value in runtime.get("availability_refs", [])],
                 ),
                 limits=ModelLimits(
                     max_context_tokens=int(limits.get("max_context_tokens", 4096)),
@@ -93,7 +95,8 @@ class ModelRegistry:
 
         self._profiles = profiles
 
-    def list_descriptors(self) -> list[ModelDescriptor]:
+    def list_descriptors(self, availability: dict[str, bool] | None = None) -> list[ModelDescriptor]:
+        model_availability = availability or {}
         return [
             ModelDescriptor(
                 id=profile.id,
@@ -101,6 +104,8 @@ class ModelRegistry:
                 quantization=profile.quantization,
                 tier=profile.tier,
                 description=profile.description,
+                runtime_ref=profile.runtime.model_ref,
+                available=model_availability.get(profile.id, True),
             )
             for profile in self._profiles.values()
         ]
@@ -112,6 +117,9 @@ class ModelRegistry:
 
     def exists(self, model_id: str) -> bool:
         return model_id in self._profiles
+
+    def all_profiles(self) -> list[ModelProfile]:
+        return list(self._profiles.values())
 
     def build_fallback_chain(self, requested_model_id: str) -> list[str]:
         chain: list[str] = [requested_model_id]

@@ -12,13 +12,17 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
 
-    ollama_base_url: str = "http://ollama:11434"
-    ollama_request_timeout_seconds: int = 120
+    vllm_base_url: str = "http://vllm:8000"
+    vllm_request_timeout_seconds: int = 180
 
     api_key: str | None = None
 
     database_path: str = "./data/app.db"
     model_profiles_path: str = "../config/model_profiles.yaml"
+    uploads_dir: str = "./data/uploads"
+    max_upload_size_bytes: int = 500 * 1024 * 1024 * 1024
+    chat_encryption_enabled: bool = False
+    chat_encryption_key: str | None = None
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="GOI_", extra="ignore")
 
@@ -39,6 +43,12 @@ class Settings(BaseSettings):
             return candidate
 
         return Path.cwd().parent / "config" / "model_profiles.yaml"
+
+    def resolved_uploads_dir(self) -> Path:
+        path = Path(self.uploads_dir)
+        if path.is_absolute():
+            return path
+        return Path.cwd() / path
 
 
 settings = Settings()

@@ -7,6 +7,7 @@ Use this index to navigate the project quickly.
 - `repository_guide.md`: high-level architecture and repo map
 - `implementation_stages_log.md`: what was delivered at each stage
 - `how_to_guide.md`: run, operate, and troubleshoot
+- `state_snapshot_2026-04-10_cbi-workflows.md`: latest working state snapshot for fast resume
 
 ## Product and Architecture
 
@@ -21,6 +22,7 @@ Use this index to navigate the project quickly.
 
 - `api_reference.md`
 - `setup_and_deployment_guide.md`
+- `all_models_deployment.md`
 
 ## Engineering Operations
 

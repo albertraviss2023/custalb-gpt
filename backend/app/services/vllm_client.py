@@ -10,7 +10,7 @@ class InferenceError(RuntimeError):
     pass
 
 
-class OllamaClient:
+class VLLMClient:
     def __init__(self, base_url: str, timeout_seconds: int) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout_seconds
@@ -18,16 +18,33 @@ class OllamaClient:
     async def ping(self) -> bool:
         try:
             async with httpx.AsyncClient(timeout=5) as client:
-                response = await client.get(f"{self.base_url}/api/tags")
+                response = await client.get(f"{self.base_url}/v1/models")
                 return response.status_code < 500
         except Exception:
             return False
+
+    async def list_model_refs(self) -> set[str]:
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                response = await client.get(f"{self.base_url}/v1/models")
+                response.raise_for_status()
+        except Exception:
+            return set()
+
+        payload = response.json()
+        models = payload.get("data", [])
+        refs: set[str] = set()
+        for item in models:
+            id_ = item.get("id")
+            if isinstance(id_, str) and id_:
+                refs.add(id_)
+        return refs
 
     async def chat(
         self,
         *,
         model_ref: str,
-        messages: list[dict[str, str]],
+        messages: list[dict[str, Any]],
         temperature: float | None = None,
         max_tokens: int | None = None,
     ) -> dict[str, Any]:
@@ -36,20 +53,17 @@ class OllamaClient:
             "messages": messages,
             "stream": False,
         }
-        options: dict[str, Any] = {}
         if temperature is not None:
-            options["temperature"] = temperature
+            payload["temperature"] = temperature
         if max_tokens is not None:
-            options["num_predict"] = max_tokens
-        if options:
-            payload["options"] = options
+            payload["max_tokens"] = max_tokens
 
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.post(f"{self.base_url}/api/chat", json=payload)
+                response = await client.post(f"{self.base_url}/v1/chat/completions", json=payload)
             response.raise_for_status()
         except httpx.TimeoutException as exc:
-            raise TimeoutError("Inference request timed out") from exc
+            raise TimeoutError("vLLM request timed out") from exc
         except httpx.HTTPStatusError as exc:
             raise InferenceError(exc.response.text) from exc
         except httpx.HTTPError as exc:
@@ -61,7 +75,7 @@ class OllamaClient:
         self,
         *,
         model_ref: str,
-        messages: list[dict[str, str]],
+        messages: list[dict[str, Any]],
         temperature: float | None = None,
         max_tokens: int | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
@@ -70,28 +84,30 @@ class OllamaClient:
             "messages": messages,
             "stream": True,
         }
-        options: dict[str, Any] = {}
         if temperature is not None:
-            options["temperature"] = temperature
+            payload["temperature"] = temperature
         if max_tokens is not None:
-            options["num_predict"] = max_tokens
-        if options:
-            payload["options"] = options
+            payload["max_tokens"] = max_tokens
 
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                async with client.stream("POST", f"{self.base_url}/api/chat", json=payload) as response:
+                async with client.stream("POST", f"{self.base_url}/v1/chat/completions", json=payload) as response:
                     response.raise_for_status()
                     async for line in response.aiter_lines():
                         if not line:
                             continue
-                        try:
-                            yield json.loads(line)
-                        except json.JSONDecodeError as exc:
-                            raise InferenceError(f"Invalid stream payload: {line}") from exc
+                        if line.startswith("data: "):
+                            data = line[6:]
+                            if data.strip() == "[DONE]":
+                                break
+                            try:
+                                yield json.loads(data)
+                            except json.JSONDecodeError as exc:
+                                raise InferenceError(f"Invalid stream payload: {line}") from exc
         except httpx.TimeoutException as exc:
-            raise TimeoutError("Inference stream timed out") from exc
+            raise TimeoutError("vLLM stream timed out") from exc
         except httpx.HTTPStatusError as exc:
-            raise InferenceError(exc.response.text) from exc
+            status_code = exc.response.status_code if exc.response is not None else "unknown"
+            raise InferenceError(f"vLLM stream HTTP error: status={status_code}") from exc
         except httpx.HTTPError as exc:
             raise InferenceError(str(exc)) from exc
