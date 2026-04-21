@@ -149,7 +149,7 @@ services:
       GOI_VLLM_REQUEST_TIMEOUT_SECONDS: 300
       GOI_TTS_PROVIDER: ${GOI_TTS_PROVIDER:-kokoro}
       GOI_TTS_KOKORO_BASE_URL: http://goi-kokoro-tts:8880
-      GOI_TTS_KOKORO_SYNTHESIZE_PATH: /v1/synthesize
+      GOI_TTS_KOKORO_SYNTHESIZE_PATH: /v1/audio/speech
       GOI_TTS_XTTS_BASE_URL: http://goi-xtts-tts:8020
       GOI_TTS_XTTS_SYNTHESIZE_PATH: /api/tts
       GOI_TTS_TIMEOUT_SECONDS: 30
@@ -178,7 +178,6 @@ services:
     image: ghcr.io/remsky/kokoro-fastapi-cpu:latest
     container_name: goi-kokoro-tts
     restart: unless-stopped
-    profiles: ["tts-kokoro", "tts-all"]
     ports:
       - "8880:8880"
     healthcheck:

@@ -66,7 +66,48 @@ class TTSService:
         return False
 
     @staticmethod
+    def _kokoro_voice_for(
+        *,
+        voice_id: str | None,
+        speaker_name: str | None,
+        accent: str | None,
+        tone: str | None,
+        speaking_style: str | None,
+    ) -> str:
+        normalized = (voice_id or "").strip().lower()
+        if normalized:
+            if "chair" in normalized:
+                return "bf_emma"
+            if "tech" in normalized:
+                return "am_michael"
+            if "hr" in normalized:
+                return "af_sarah"
+            if "ops" in normalized:
+                return "bm_daniel"
+            if "stakeholder" in normalized:
+                return "af_nicole"
+        speaker = (speaker_name or "").lower()
+        if "elena" in speaker or "chair" in speaker:
+            return "bf_emma"
+        if "kwame" in speaker or "technical" in speaker:
+            return "am_michael"
+        if "maria" in speaker or "hr" in speaker:
+            return "af_sarah"
+        if "chen" in speaker or "operations" in speaker:
+            return "bm_daniel"
+        if "linda" in speaker:
+            return "af_nicole"
+
+        if accent == "en-gb":
+            return "bf_emma"
+        if accent == "en-us":
+            return "af_heart"
+        if tone == "formal" or speaking_style == "structured":
+            return "bf_emma"
+        return "af_heart"
+
     def _payload(
+        self,
         *,
         text: str,
         speaker_name: str | None,
@@ -75,6 +116,20 @@ class TTSService:
         tone: str | None,
         speaking_style: str | None,
     ) -> dict[str, Any]:
+        if self.provider_name == "kokoro":
+            return {
+                "model": "kokoro",
+                "input": text,
+                "voice": self._kokoro_voice_for(
+                    voice_id=voice_id,
+                    speaker_name=speaker_name,
+                    accent=accent,
+                    tone=tone,
+                    speaking_style=speaking_style,
+                ),
+                "response_format": "wav",
+                "stream": False,
+            }
         return {
             "text": text,
             "speaker_name": speaker_name,

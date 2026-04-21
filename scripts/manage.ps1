@@ -4,10 +4,11 @@ function Show-Menu {
     Write-Host "   TurboGPT Personal Assistant Manager" -ForegroundColor Cyan
     Write-Host "===============================================" -ForegroundColor Cyan
     Write-Host "1) Bootstrap Models (Pull via Ollama)"
-    Write-Host "2) Start Stack (Docker Compose Up)"
-    Write-Host "3) Stop Stack (Docker Compose Down)"
-    Write-Host "4) Clean Unused Docker Stuff (Prune)"
-    Write-Host "5) Full Reset (Delete ALL Models and Databases)"
+    Write-Host "2) Bootstrap TTS Runtime (Local)"
+    Write-Host "3) Start Stack (Docker Compose Up)"
+    Write-Host "4) Stop Stack (Docker Compose Down)"
+    Write-Host "5) Clean Unused Docker Stuff (Prune)"
+    Write-Host "6) Full Reset (Delete ALL Models and Databases)"
     Write-Host "Q) Exit"
     Write-Host "===============================================" -ForegroundColor Cyan
 }
@@ -18,6 +19,16 @@ function Bootstrap-Models {
         Write-Host "`nModel pre-caching complete." -ForegroundColor Green
     } else {
         Write-Host "`nModel pre-caching finished with errors. Check output above." -ForegroundColor Red
+    }
+    Pause
+}
+
+function Bootstrap-Tts {
+    & "$PSScriptRoot\bootstrap-tts.ps1" -Provider "kokoro"
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "`nTTS bootstrap complete." -ForegroundColor Green
+    } else {
+        Write-Host "`nTTS bootstrap finished with errors. Check output above." -ForegroundColor Red
     }
     Pause
 }
@@ -60,10 +71,11 @@ while ($true) {
     $choice = Read-Host "Select an option"
     switch ($choice) {
         "1" { Bootstrap-Models }
-        "2" { Start-Stack }
-        "3" { Stop-Stack }
-        "4" { Clean-Docker }
-        "5" { Full-Reset }
+        "2" { Bootstrap-Tts }
+        "3" { Start-Stack }
+        "4" { Stop-Stack }
+        "5" { Clean-Docker }
+        "6" { Full-Reset }
         "q" { exit }
         "Q" { exit }
         default { Write-Host "Invalid option, try again." -ForegroundColor Red; Start-Sleep -Seconds 1 }

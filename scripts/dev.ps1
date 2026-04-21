@@ -10,4 +10,4 @@ if ($Build) {
   docker compose -f $composeFile up -d
 }
 
-Write-Host "Stack started. UI: http://localhost:3000 API: http://localhost:8000"
+Write-Host "Stack started. UI: http://localhost:3000 API: http://localhost:8001 TTS: http://localhost:8880"

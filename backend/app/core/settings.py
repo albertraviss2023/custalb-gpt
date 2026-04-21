@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     tts_provider: str = "kokoro"
     tts_timeout_seconds: int = 30
     tts_kokoro_base_url: str = "http://goi-kokoro-tts:8880"
-    tts_kokoro_synthesize_path: str = "/v1/synthesize"
+    tts_kokoro_synthesize_path: str = "/v1/audio/speech"
     tts_xtts_base_url: str = "http://goi-xtts-tts:8020"
     tts_xtts_synthesize_path: str = "/api/tts"
 

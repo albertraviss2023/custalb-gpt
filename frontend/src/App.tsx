@@ -1401,6 +1401,10 @@ function App() {
       return 'ready'
     } catch (error) {
       const lowered = String(error).toLowerCase()
+      void reportError('mic-access', error, {
+        secure_context: window.isSecureContext,
+        user_agent: navigator.userAgent,
+      })
       if (lowered.includes('notallowed') || lowered.includes('permission')) {
         setMicAccessState('denied')
         return 'denied'
@@ -1413,7 +1417,17 @@ function App() {
 
   async function toggleVoiceInput() {
     if (interviewSessionState !== 'running') {
-      setError('Start interview to enable voice input.')
+      if (interviewSessionState === 'paused') {
+        setError('Resume interview to enable voice input.')
+      } else {
+        setError('Start interview to enable voice input.')
+      }
+      return
+    }
+
+    if (!window.isSecureContext) {
+      setMicAccessState('error')
+      setError('Voice input requires a secure context. Use https or localhost.')
       return
     }
 
@@ -1424,7 +1438,11 @@ function App() {
     const Recognition = maybeWindow.SpeechRecognition ?? maybeWindow.webkitSpeechRecognition
     if (!Recognition) {
       setMicAccessState('unsupported')
-      setError('Voice input is not supported in this browser.')
+      void reportError('voice-input-unsupported', new Error('SpeechRecognition unavailable'), {
+        secure_context: window.isSecureContext,
+        user_agent: navigator.userAgent,
+      })
+      setError('Voice input is not supported in this browser. Use Chrome or Edge on desktop.')
       return
     }
 

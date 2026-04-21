@@ -12,20 +12,20 @@ Configure backend environment variables:
 ```env
 GOI_TTS_PROVIDER=kokoro
 GOI_TTS_KOKORO_BASE_URL=http://goi-kokoro-tts:8880
-GOI_TTS_KOKORO_SYNTHESIZE_PATH=/v1/synthesize
+GOI_TTS_KOKORO_SYNTHESIZE_PATH=/v1/audio/speech
 GOI_TTS_XTTS_BASE_URL=http://goi-xtts-tts:8020
 GOI_TTS_XTTS_SYNTHESIZE_PATH=/api/tts
 GOI_TTS_TIMEOUT_SECONDS=30
 ```
 
-## Docker Compose Profiles
-Start stack with Kokoro profile:
+## Docker Compose Startup
+Kokoro now starts with the default stack:
 
 ```bash
-docker compose -f infra/docker-compose.yml --profile tts-kokoro up -d
+docker compose -f infra/docker-compose.yml up -d
 ```
 
-Start stack with XTTS profile:
+Start stack with XTTS profile in addition to default services:
 
 ```bash
 docker compose -f infra/docker-compose.yml --profile tts-xtts up -d

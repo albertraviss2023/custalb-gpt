@@ -53,7 +53,7 @@ def test_tts_health_true_for_reachable_service() -> None:
     service = TTSService(
         provider="kokoro",
         kokoro_base_url="http://kokoro",
-        kokoro_path="/v1/synthesize",
+        kokoro_path="/v1/audio/speech",
         xtts_base_url="http://xtts",
         xtts_path="/api/tts",
         timeout_seconds=5,
@@ -66,7 +66,7 @@ def test_tts_synthesize_returns_audio_bytes() -> None:
     service = TTSService(
         provider="kokoro",
         kokoro_base_url="http://kokoro",
-        kokoro_path="/v1/synthesize",
+        kokoro_path="/v1/audio/speech",
         xtts_base_url="http://xtts",
         xtts_path="/api/tts",
         timeout_seconds=5,
@@ -99,7 +99,7 @@ def test_tts_synthesize_raises_for_unreachable_provider() -> None:
     service = TTSService(
         provider="xtts",
         kokoro_base_url="http://kokoro",
-        kokoro_path="/v1/synthesize",
+        kokoro_path="/v1/audio/speech",
         xtts_base_url="http://xtts",
         xtts_path="/api/tts",
         timeout_seconds=5,
