@@ -1,0 +1,21 @@
+name: Cleanup Preview
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  delete-namespace:
+    runs-on: ubuntu-latest
+    if: ${{ secrets.KUBE_CONFIG_BASE64 != '' }}
+    steps:
+      - name: Configure kubectl
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBE_CONFIG_BASE64 }}" | base64 -d > $HOME/.kube/config
+          
+      - name: Delete Namespace
+        run: |
+          NAMESPACE="personal-goi-pr-${{ github.event.number }}"
+          echo "Deleting namespace ${NAMESPACE}"
+          kubectl delete namespace ${NAMESPACE} --ignore-not-found

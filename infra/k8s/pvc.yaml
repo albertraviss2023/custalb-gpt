@@ -2,7 +2,6 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: ollama-data
-  namespace: personal-goi
 spec:
   accessModes:
     - ReadWriteOnce
@@ -14,7 +13,6 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: api-data
-  namespace: personal-goi
 spec:
   accessModes:
     - ReadWriteOnce

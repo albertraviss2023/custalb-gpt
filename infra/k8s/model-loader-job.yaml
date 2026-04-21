@@ -2,7 +2,6 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: goi-model-loader
-  namespace: personal-goi
 spec:
   ttlSecondsAfterFinished: 300
   template:

@@ -1,6 +1,5 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: personal-goi
 resources:
   - namespace.yaml
   - configmap.yaml
@@ -8,3 +7,11 @@ resources:
   - deployments.yaml
   - ingress.yaml
   - model-loader-job.yaml
+
+images:
+  - name: personal-goi-api
+    newName: ghcr.io/your-org/personal-goi-api
+    newTag: latest
+  - name: personal-goi-ui
+    newName: ghcr.io/your-org/personal-goi-ui
+    newTag: latest
