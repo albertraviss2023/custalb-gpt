@@ -731,6 +731,78 @@ function App() {
     return content.slice(0, index).trim()
   }
 
+  function cbiBandFromReadiness(readiness: number): { label: string; className: 'green' | 'yellow' | 'red' | 'unknown' } {
+    if (readiness >= 80) return { label: 'Strong', className: 'green' }
+    if (readiness >= 60) return { label: 'Developing', className: 'yellow' }
+    if (readiness >= 0) return { label: 'Needs Improvement', className: 'red' }
+    return { label: 'Unknown', className: 'unknown' }
+  }
+
+  function renderCbiReportCard(scorecard: CbiScorecard, marginTop = '1rem') {
+    const readiness = Math.max(0, Math.min(100, Math.round(scorecard.overall_readiness_0_to_100)))
+    const band = cbiBandFromReadiness(readiness)
+
+    return (
+      <div className="cbi-report-card" style={{ marginTop }}>
+        <div className="cbi-report-head">
+          <div>
+            <h4>Final Performance Report</h4>
+            <div style={{ fontSize: '0.75rem', color: '#718096', fontWeight: 600 }}>
+              Level: {scorecard.level} | Verdict: {scorecard.verdict}
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <span className={`context-pressure-pill ${band.className}`}>{band.label}</span>
+            <span className="cbi-score-badge">{readiness}% Readiness</span>
+          </div>
+        </div>
+
+        <div className="cbi-competency-list">
+          <h5 style={{ margin: '1rem 0 0.5rem', fontSize: '0.85rem', color: '#2d3748' }}>Competency Assessment</h5>
+          {scorecard.competencies?.map((competency) => {
+            const pct = Math.max(0, Math.min(100, Math.round((competency.score_1_to_5 / 5) * 100)))
+            return (
+              <div key={competency.name} className="cbi-competency-item">
+                <div className="cbi-competency-row">
+                  <strong>{competency.name}</strong>
+                  <span>{competency.score_1_to_5}/5</span>
+                </div>
+                <div className="cbi-competency-bar">
+                  <div className="cbi-competency-fill" style={{ width: `${pct}%` }} />
+                </div>
+                <p style={{ fontSize: '0.75rem' }}><strong>Evidence:</strong> {competency.evidence}</p>
+                <p style={{ fontSize: '0.75rem' }}><strong>Gaps:</strong> {competency.gaps}</p>
+              </div>
+            )
+          })}
+        </div>
+
+        <div className="delivery-assessment" style={{ marginTop: '1.5rem', padding: '1rem', background: '#f7fafc', borderRadius: '0.75rem', border: '1px solid #e2e8f0' }}>
+          <h5 style={{ margin: '0 0 0.75rem', fontSize: '0.85rem', color: '#2d3748' }}>Delivery & Presence</h5>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '0.75rem' }}>
+            <div className="stat-item">
+              <div className="stat-label" style={{ fontSize: '0.6rem' }}>Confidence</div>
+              <div className="stat-value" style={{ fontSize: '0.9rem' }}>{scorecard.delivery?.confidence ?? 0}%</div>
+            </div>
+            <div className="stat-item">
+              <div className="stat-label" style={{ fontSize: '0.6rem' }}>Clarity</div>
+              <div className="stat-value" style={{ fontSize: '0.9rem' }}>{scorecard.delivery?.clarity ?? 0}%</div>
+            </div>
+            <div className="stat-item">
+              <div className="stat-label" style={{ fontSize: '0.6rem' }}>Presence</div>
+              <div className="stat-value" style={{ fontSize: '0.9rem' }}>{scorecard.delivery?.presence ?? 0}%</div>
+            </div>
+          </div>
+          <p style={{ fontSize: '0.75rem', margin: 0 }}><strong>Feedback:</strong> {scorecard.delivery?.feedback ?? 'No feedback available'}</p>
+        </div>
+
+        <div className="panel-summary-box" style={{ marginTop: '1rem' }}>
+          <p style={{ fontSize: '0.8rem', color: '#4a5568' }}><strong>Panel Summary:</strong> {scorecard.panel_summary}</p>
+        </div>
+      </div>
+    )
+  }
+
   function getFollowups(content: string): string[] {
     const clean = stripCbiScorecardBlock(content)
     const lines = clean.split('\n').map((line) => line.trim()).filter(Boolean)
@@ -2587,60 +2659,7 @@ function App() {
                     const latestAssistant = [...messages].reverse().find(m => m.role === 'assistant')
                     const scorecard = latestAssistant ? extractCbiScorecard(latestAssistant.content) : null
                     if (!scorecard) return null
-                    return (
-                      <div className="cbi-report-card" style={{ marginTop: '1.5rem' }}>
-                        <div className="cbi-report-head">
-                          <div>
-                            <h4>Final Performance Report</h4>
-                            <div style={{ fontSize: '0.75rem', color: '#718096', fontWeight: 600 }}>Level: {scorecard.level} | Verdict: {scorecard.verdict}</div>
-                          </div>
-                          <span className="cbi-score-badge">{Math.round(scorecard.overall_readiness_0_to_100)}% Readiness</span>
-                        </div>
-
-                        <div className="cbi-competency-list">
-                          <h5 style={{ margin: '1rem 0 0.5rem', fontSize: '0.85rem', color: '#2d3748' }}>Competency Assessment</h5>
-                          {scorecard.competencies?.map((competency) => {
-                            const pct = Math.max(0, Math.min(100, Math.round((competency.score_1_to_5 / 5) * 100)))
-                            return (
-                              <div key={competency.name} className="cbi-competency-item">
-                                <div className="cbi-competency-row">
-                                  <strong>{competency.name}</strong>
-                                  <span>{competency.score_1_to_5}/5</span>
-                                </div>
-                                <div className="cbi-competency-bar">
-                                  <div className="cbi-competency-fill" style={{ width: `${pct}%` }} />
-                                </div>
-                                <p style={{ fontSize: '0.75rem' }}><strong>Evidence:</strong> {competency.evidence}</p>
-                                <p style={{ fontSize: '0.75rem' }}><strong>Gaps:</strong> {competency.gaps}</p>
-                              </div>
-                            )
-                          })}
-                        </div>
-
-                        <div className="delivery-assessment" style={{ marginTop: '1.5rem', padding: '1rem', background: '#f7fafc', borderRadius: '0.75rem', border: '1px solid #e2e8f0' }}>
-                          <h5 style={{ margin: '0 0 0.75rem', fontSize: '0.85rem', color: '#2d3748' }}>Delivery & Presence</h5>
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '0.75rem' }}>
-                            <div className="stat-item">
-                              <div className="stat-label" style={{ fontSize: '0.6rem' }}>Confidence</div>
-                              <div className="stat-value" style={{ fontSize: '0.9rem' }}>{scorecard.delivery?.confidence ?? 0}%</div>
-                            </div>
-                            <div className="stat-item">
-                              <div className="stat-label" style={{ fontSize: '0.6rem' }}>Clarity</div>
-                              <div className="stat-value" style={{ fontSize: '0.9rem' }}>{scorecard.delivery?.clarity ?? 0}%</div>
-                            </div>
-                            <div className="stat-item">
-                              <div className="stat-label" style={{ fontSize: '0.6rem' }}>Presence</div>
-                              <div className="stat-value" style={{ fontSize: '0.9rem' }}>{scorecard.delivery?.presence ?? 0}%</div>
-                            </div>
-                          </div>
-                          <p style={{ fontSize: '0.75rem', margin: 0 }}><strong>Feedback:</strong> {scorecard.delivery?.feedback ?? 'No feedback available'}</p>
-                        </div>
-
-                        <div className="panel-summary-box" style={{ marginTop: '1rem' }}>
-                          <p style={{ fontSize: '0.8rem', color: '#4a5568' }}><strong>Panel Summary:</strong> {scorecard.panel_summary}</p>
-                        </div>
-                      </div>
-                    )
+                    return renderCbiReportCard(scorecard, '1.5rem')
                   })()}
                 </div>
               </div>
@@ -2984,11 +3003,20 @@ function App() {
                   <article key={message.id} className={`bubble ${message.role}`}>
                     {message.role === 'assistant' ? (
                       <div className="assistant-message">
-                        <div className="markdown-body">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                            {message.content || (isSending ? 'Thinking...' : '')}
-                          </ReactMarkdown>
-                        </div>
+                        {(() => {
+                          const scorecard = extractCbiScorecard(message.content)
+                          const displayContent = scorecard ? stripCbiScorecardBlock(message.content) : message.content
+                          return (
+                            <>
+                              <div className="markdown-body">
+                                <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                                  {displayContent || (isSending ? 'Thinking...' : '')}
+                                </ReactMarkdown>
+                              </div>
+                              {scorecard ? renderCbiReportCard(scorecard) : null}
+                            </>
+                          )
+                        })()}
                         <div className="assistant-actions">
                           <button
                             className={`message-action-btn ${messageFeedback[message.id] === 'up' ? 'active' : ''}`}
