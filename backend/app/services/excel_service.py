@@ -11,6 +11,7 @@ from openpyxl.workbook import Workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
 from app.models.excel_schemas import ExcelActionPlan, ExcelSheetPreview, ExcelSessionMetadata
+from app.services.vllm_client import InferenceError
 from app.services.vllm_client import VLLMClient
 from app.services.model_registry import ModelRegistry
 
@@ -141,28 +142,35 @@ class ExcelService:
             {"role": "user", "content": f"Context: {json.dumps(context)}\nInstruction: {user_instruction}"}
         ]
 
-        if not model_id:
-            model_id = self.model_registry.default_model_id
-        
-        profile = self.model_registry.get(model_id)
-        
-        response = await self.vllm_client.chat(
-            model_ref=profile.runtime.model_ref,
-            messages=messages,
-            temperature=0.0 # Strict JSON
-        )
+        requested_model_id = model_id or self.model_registry.default_model_id
+        chain = self.model_registry.build_fallback_chain(requested_model_id)
+        last_error: Exception | None = None
 
-        # Extract JSON from response
-        text = response["choices"][0]["message"]["content"]
-        # Basic JSON extraction in case of surrounding text
-        start = text.find("{")
-        end = text.rfind("}") + 1
-        if start != -1 and end != -1:
-            plan_data = json.loads(text[start:end])
-        else:
-            plan_data = json.loads(text)
-        
-        return ExcelActionPlan(**plan_data)
+        for candidate_model_id in chain:
+            profile = self.model_registry.get(candidate_model_id)
+            try:
+                response = await self.vllm_client.chat(
+                    model_ref=profile.runtime.model_ref,
+                    messages=messages,
+                    temperature=0.0,  # Strict JSON
+                    max_tokens=800,
+                )
+
+                text = response["choices"][0]["message"]["content"]
+                start = text.find("{")
+                end = text.rfind("}") + 1
+                if start != -1 and end != -1:
+                    plan_data = json.loads(text[start:end])
+                else:
+                    plan_data = json.loads(text)
+                return ExcelActionPlan(**plan_data)
+            except (InferenceError, TimeoutError, json.JSONDecodeError, KeyError, ValueError) as exc:
+                last_error = exc
+                continue
+
+        if last_error:
+            raise ValueError(f"No available model could plan Excel action: {last_error}") from last_error
+        raise ValueError("No available model could plan Excel action")
 
     def apply_action(self, session_id: str, plan: ExcelActionPlan) -> str:
         session = self.session_manager.get_session(session_id)
