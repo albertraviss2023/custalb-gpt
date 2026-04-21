@@ -1077,16 +1077,19 @@ function App() {
         voicePauseTimerRef.current = null
       }
       voicePauseTimerRef.current = window.setTimeout(() => {
-        if (!voiceDraftRef.current.trim() || isSendingRef.current || voiceAutoSendingRef.current) return
+        const transcript = voiceDraftRef.current.trim()
+        if (!transcript || isSendingRef.current || voiceAutoSendingRef.current) return
+        
+        console.log('Voice auto-sending:', transcript)
         speechRecognitionRef.current?.stop()
         stopVoiceMeter()
         setIsVoiceListening(false)
         voiceAutoSendingRef.current = true
-        void handleSend(voiceDraftRef.current.trim(), true)
+        void handleSend(transcript, true)
           .finally(() => {
             voiceAutoSendingRef.current = false
           })
-      }, 5000)
+      }, 7000)
     }
     recognition.onresult = (event) => {
       let merged = ''
