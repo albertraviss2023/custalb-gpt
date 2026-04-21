@@ -23,6 +23,11 @@ import {
   synthesizeLocalTts,
   updateChat,
   uploadChunk,
+  uploadExcel,
+  getExcelSession,
+  setExcelActiveSheet,
+  chatExcelAction,
+  getExcelDownloadUrl,
 } from './api'
 import type {
   AddonDescriptor,
@@ -32,8 +37,10 @@ import type {
   ModelDescriptor,
   UploadRecord,
   ChatTelemetryResponse,
+  ExcelSessionMetadata,
 } from './types'
 
+import { ExcelPreview } from './ExcelPreview'
 import './styles.css'
 
 interface UiMessage {
@@ -270,6 +277,7 @@ function App() {
   const [chats, setChats] = useState<ChatSummary[]>([])
   const [activeChatId, setActiveChatId] = useState<string | null>(null)
   const [activeChat, setActiveChat] = useState<ChatDetail | null>(null)
+  const [excelSession, setExcelSession] = useState<ExcelSessionMetadata | null>(null)
   const [messages, setMessages] = useState<UiMessage[]>([])
   const [input, setInput] = useState('')
   const [pastedImages, setPastedImages] = useState<string[]>([])
@@ -288,6 +296,7 @@ function App() {
   const [chatAttachmentMap, setChatAttachmentMap] = useState<Record<string, string[]>>({})
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const excelFileInputRef = useRef<HTMLInputElement>(null)
   const activeSendController = useRef<AbortController | null>(null)
   const messageEndRef = useRef<HTMLDivElement>(null)
   const speechRecognitionRef = useRef<BrowserSpeechRecognition | null>(null)
@@ -341,18 +350,13 @@ function App() {
     return addons.find((addon) => addon.id === activeAddonId)?.name ?? activeAddonId
   }, [activeAddonId, addons])
 
-  const hasScorecardInHistory = useMemo(() => {
-    return messages.some((m) => m.role === 'assistant' && m.content.includes('CBI_SCORECARD_JSON:'))
-  }, [messages])
-
   const activeAddon = useMemo(() => addons.find(a => a.id === activeAddonId), [addons, activeAddonId])
   
   const isCbiMode = 
     activeAddonId.toLowerCase().includes('interview') || 
     activeGemName.toLowerCase().includes('interview') ||
     activeGemName.toLowerCase().includes('cbi') ||
-    activeAddon?.category === 'interview' ||
-    hasScorecardInHistory
+    activeAddon?.category === 'interview'
 
   const filteredChats = useMemo(() => {
     const now = new Date()
@@ -1379,6 +1383,7 @@ function App() {
       setChats(chatList)
       setHealthStatus(health.runtime_reachable ? 'ready' : 'runtime unavailable')
       setAddons(addonCatalog.addons)
+      setActiveAddonId('')
       setUploads(uploadList)
 
       const routeChatId = parseChatIdFromPath(window.location.pathname)
@@ -1532,12 +1537,17 @@ function App() {
           .finally(() => {
             voiceAutoSendingRef.current = false
           })
-      }, 7000)
+      }, 2800)
     }
     recognition.onresult = (event) => {
+      const typedEvent = event as unknown as {
+        resultIndex?: number
+        results: ArrayLike<(ArrayLike<{ transcript: string }> & { isFinal?: boolean })>
+      }
+      const startIndex = typeof typedEvent.resultIndex === 'number' ? typedEvent.resultIndex : 0
       let merged = ''
-      for (let i = 0; i < event.results.length; i += 1) {
-        const part = event.results[i]?.[0]?.transcript ?? ''
+      for (let i = startIndex; i < typedEvent.results.length; i += 1) {
+        const part = typedEvent.results[i]?.[0]?.transcript ?? ''
         if (part) merged += `${part} `
       }
       const transcript = merged.trim()
@@ -1647,6 +1657,7 @@ function App() {
 
   async function handleCreateChat() {
     try {
+      setActiveAddonId('')
       const chat = await createChat({ selected_model_id: defaultModelId || undefined })
       setChatAttachmentMap((current) => ({ ...current, [chat.id]: [] }))
       await refreshChats(chat.id)
@@ -1660,6 +1671,7 @@ function App() {
     const sourceId = sourceChatId || inheritSourceChatId || activeChatId
     if (!sourceId) return
     try {
+      setActiveAddonId('')
       const chat = await createChat({
         selected_model_id: activeModelId || defaultModelId || undefined,
         inherit_from_chat_id: sourceId,
@@ -1885,7 +1897,72 @@ function App() {
     }
   }
 
+  const isExcelMode = activeAddonId === 'excel_data_analyst'
+
+  async function handleExcelUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    setError(null)
+    setIsSending(true)
+    try {
+      const session = await uploadExcel(file)
+      setExcelSession(session)
+    } catch (err) {
+      void reportError('excel-upload', err)
+    } finally {
+      setIsSending(false)
+    }
+  }
+
+  async function handleExcelSheetChange(sheetName: string) {
+    if (!excelSession) return
+    try {
+      await setExcelActiveSheet(excelSession.session_id, sheetName)
+      const updated = await getExcelSession(excelSession.session_id)
+      setExcelSession(updated)
+    } catch (err) {
+      void reportError('excel-sheet-change', err)
+    }
+  }
+
+  function handleExcelDownload() {
+    if (!excelSession) return
+    window.open(getExcelDownloadUrl(excelSession.session_id), '_blank')
+  }
+
+  async function handleExcelSend() {
+    if (!excelSession || !input.trim() || isSending) return
+    const instruction = input.trim()
+    setInput('')
+    setError(null)
+    setIsSending(true)
+
+    // Add user message to UI
+    const userMsg: UiMessage = { id: crypto.randomUUID(), role: 'user', content: instruction }
+    setMessages(prev => [...prev, userMsg])
+
+    try {
+      const response = await chatExcelAction(excelSession.session_id, instruction, activeModelId || undefined)
+      setExcelSession(prev => prev ? { ...prev, preview: response.preview, active_sheet: response.changed_sheet } : prev)
+      
+      const assistantMsg: UiMessage = { 
+        id: crypto.randomUUID(), 
+        role: 'assistant', 
+        content: `${response.summary}\n\n${response.action_plan.explanation || ''}`
+      }
+      setMessages(prev => [...prev, assistantMsg])
+    } catch (err) {
+      void reportError('excel-action', err)
+    } finally {
+      setIsSending(false)
+    }
+  }
+
   async function handleSend(overrideContent?: string, isVoiceSubmit = false, bypassInterviewSessionGate = false) {
+    if (isExcelMode && excelSession) {
+      await handleExcelSend()
+      return
+    }
     const content = (overrideContent ?? input).trim()
     if ((!content && pastedImages.length === 0) || isSending) return
     if (activeModel && activeModel.available === false) {
@@ -2301,7 +2378,84 @@ function App() {
       />
 
       <main className="chat-panel">
-        {isCbiMode ? (
+        {isExcelMode ? (
+          <div className="excel-layout">
+            <div className="excel-main-pane">
+              {excelSession ? (
+                <ExcelPreview
+                  metadata={excelSession}
+                  onSheetChange={handleExcelSheetChange}
+                  onDownload={handleExcelDownload}
+                />
+              ) : (
+                <div className="excel-upload-area">
+                  <div className="excel-upload-box" onClick={() => excelFileInputRef.current?.click()}>
+                    <p>Drop your Excel workbook here or click to upload</p>
+                    <input
+                      ref={excelFileInputRef}
+                      type="file"
+                      className="hidden-input"
+                      onChange={handleExcelUpload}
+                      accept=".xlsx,.xlsm"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="excel-side-pane">
+              <header className="chat-header">
+                <div className="header-left">Analyst Chat</div>
+              </header>
+              <section className="message-feed">
+                {messages.length === 0 ? (
+                  <div className="empty-state">
+                    <h3>Excel Data Analyst</h3>
+                    <p>Upload a workbook to start analyzing with natural language.</p>
+                  </div>
+                ) : (
+                  messages.map((message) => (
+                    <article key={message.id} className={`bubble ${message.role}`}>
+                      <div className="markdown-body">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                          {message.content}
+                        </ReactMarkdown>
+                      </div>
+                    </article>
+                  ))
+                )}
+                <div ref={messageEndRef} />
+              </section>
+              <footer className="composer" style={{ borderTop: '1px solid var(--border-color)' }}>
+                <div className="composer-inner" style={{ boxShadow: 'none' }}>
+                  <textarea
+                    value={input}
+                    placeholder="Ask the analyst..."
+                    onChange={(event) => {
+                      setInput(event.target.value)
+                      event.target.style.height = 'auto'
+                      event.target.style.height = `${event.target.scrollHeight}px`
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' && !event.shiftKey) {
+                        event.preventDefault()
+                        void handleSend()
+                      }
+                    }}
+                    rows={1}
+                  />
+                  <div className="composer-tools">
+                    <div className="send-stack">
+                      <button className="nav-btn primary" disabled={isSending || !input.trim() || !excelSession} onClick={() => void handleSend()}>
+                        {isSending ? '...' : 'Send'}
+                      </button>
+                    </div>
+                  </div>
+                  {error ? <div className="error-banner">{error}</div> : null}
+                </div>
+              </footer>
+            </div>
+          </div>
+        ) : isCbiMode ? (
           <div className="interview-room-layout">
             <header className="interview-room-header">
               <div className="session-meta">

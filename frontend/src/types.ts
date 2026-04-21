@@ -174,3 +174,39 @@ export interface TtsSynthesisRequest {
   tone?: string
   speaking_style?: string
 }
+
+export interface ExcelSheetPreview {
+  name: string
+  headers: string[]
+  rows: unknown[][]
+  total_rows: number
+  total_columns: number
+}
+
+export interface ExcelSessionMetadata {
+  session_id: string
+  filename: string
+  sheets: string[]
+  active_sheet: string
+  preview?: ExcelSheetPreview | null
+}
+
+export interface ExcelActionPlan {
+  action_type: string
+  sheet_name?: string | null
+  target_column_name?: string | null
+  formula_pattern?: string | null
+  source_columns: string[]
+  fill_down: boolean
+  insert_position: 'end' | 'next_to_source'
+  explanation?: string | null
+  clarification_question?: string | null
+}
+
+export interface ExcelActionResponse {
+  session_id: string
+  summary: string
+  changed_sheet: string
+  preview: ExcelSheetPreview
+  action_plan: ExcelActionPlan
+}
