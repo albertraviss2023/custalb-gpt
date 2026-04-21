@@ -147,6 +147,16 @@ class HealthResponse(ApiModel):
     status: str
     version: str
     runtime_reachable: bool
+    tts_reachable: bool | None = None
+
+
+class TtsSynthesisRequest(ApiModel):
+    text: str = Field(min_length=1, max_length=3000)
+    speaker_name: str | None = None
+    voice_id: str | None = None
+    accent: str | None = None
+    tone: str | None = None
+    speaking_style: str | None = None
 
 
 class AddonDescriptor(ApiModel):

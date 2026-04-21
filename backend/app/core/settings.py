@@ -22,6 +22,12 @@ class Settings(BaseSettings):
     max_upload_size_bytes: int = 500 * 1024 * 1024 * 1024
     chat_encryption_enabled: bool = False
     chat_encryption_key: str | None = None
+    tts_provider: str = "kokoro"
+    tts_timeout_seconds: int = 30
+    tts_kokoro_base_url: str = "http://goi-kokoro-tts:8880"
+    tts_kokoro_synthesize_path: str = "/v1/synthesize"
+    tts_xtts_base_url: str = "http://goi-xtts-tts:8020"
+    tts_xtts_synthesize_path: str = "/api/tts"
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="GOI_", extra="ignore")
 

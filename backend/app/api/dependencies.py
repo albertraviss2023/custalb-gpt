@@ -6,6 +6,7 @@ from app.db.repository import Repository
 from app.services.chat_service import ChatService
 from app.services.addon_store import AddonStore
 from app.services.model_registry import ModelRegistry
+from app.services.tts_service import TTSService
 from app.services.vllm_client import VLLMClient
 
 
@@ -27,3 +28,7 @@ def get_chat_service(request: Request) -> ChatService:
 
 def get_addon_store(request: Request) -> AddonStore:
     return request.app.state.addon_store
+
+
+def get_tts_service(request: Request) -> TTSService:
+    return request.app.state.tts_service

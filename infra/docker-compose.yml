@@ -147,6 +147,12 @@ services:
       GOI_DATABASE_PATH: /app/data/app.db
       GOI_MODEL_PROFILES_PATH: /app/config/model_profiles.yaml
       GOI_VLLM_REQUEST_TIMEOUT_SECONDS: 300
+      GOI_TTS_PROVIDER: ${GOI_TTS_PROVIDER:-kokoro}
+      GOI_TTS_KOKORO_BASE_URL: http://goi-kokoro-tts:8880
+      GOI_TTS_KOKORO_SYNTHESIZE_PATH: /v1/synthesize
+      GOI_TTS_XTTS_BASE_URL: http://goi-xtts-tts:8020
+      GOI_TTS_XTTS_SYNTHESIZE_PATH: /api/tts
+      GOI_TTS_TIMEOUT_SECONDS: 30
     volumes:
       - api-data:/app/data
       - ../config:/app/config:ro
@@ -167,6 +173,32 @@ services:
       - api
     ports:
       - "3000:80"
+
+  kokoro-tts:
+    image: ghcr.io/remsky/kokoro-fastapi-cpu:latest
+    container_name: goi-kokoro-tts
+    restart: unless-stopped
+    profiles: ["tts-kokoro", "tts-all"]
+    ports:
+      - "8880:8880"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8880/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  xtts-tts:
+    image: ghcr.io/coqui-ai/xtts-streaming-server:latest
+    container_name: goi-xtts-tts
+    restart: unless-stopped
+    profiles: ["tts-xtts", "tts-all"]
+    ports:
+      - "8020:8020"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8020/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
 volumes:
   ollama-data:
