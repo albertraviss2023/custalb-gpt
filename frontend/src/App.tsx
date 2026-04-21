@@ -915,7 +915,7 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (!isCbiMode || !cbiTtsEnabled || isSending) return
+    if (!isCbiMode || !cbiTtsEnabled || isSending || interviewSessionState !== 'running') return
     const latestAssistant = [...messages].reverse().find((message) => message.role === 'assistant')
     if (!latestAssistant || !latestAssistant.content.trim()) return
     const signature = `${activeChatId ?? 'no-chat'}:${latestAssistant.content.trim()}`
