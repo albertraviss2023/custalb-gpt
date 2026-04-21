@@ -77,7 +77,7 @@ export interface ChatCompletionRequest {
   }>
   interview_difficulty?: 'medium' | 'high'
   interview_realism_intensity?: 'low' | 'medium' | 'high' | 'extreme'
-  delivery_signals?: Record<string, any>
+  delivery_signals?: Record<string, unknown>
   regenerate_target_message_id?: string
 }
 

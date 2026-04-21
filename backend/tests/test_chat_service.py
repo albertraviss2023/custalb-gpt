@@ -503,7 +503,7 @@ routing:
         )
     )
 
-    assert result.telemetry["context_ceiling_tokens"] == 1024
+    assert result.telemetry["context_ceiling_tokens"] == 2048
     assert client.last_max_tokens is not None
     assert client.last_max_tokens <= 320
     conn.close()

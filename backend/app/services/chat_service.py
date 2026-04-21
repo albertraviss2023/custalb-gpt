@@ -334,7 +334,8 @@ class ChatService:
             existing_names = {c["name"] for c in competencies}
             added = 0
             for m in managerial:
-                if added >= 2: break
+                if added >= 2:
+                    break
                 if m["name"] not in existing_names:
                     competencies.append(m)
                     added += 1

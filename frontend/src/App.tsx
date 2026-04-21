@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, useCallback, type MouseEvent as ReactMouseEvent } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import logoMark from './assets/turbogpt-logo.svg'
@@ -66,45 +66,6 @@ const CHUNK_SIZE_BYTES = 8 * 1024 * 1024
 const CHAT_PATH_PREFIX = '/chat/'
 const STREAM_RESPONSE_TIMEOUT_MS = 45000
 const CBI_STREAM_RESPONSE_TIMEOUT_MS = 150000
-const CBI_ROLE_PRESETS = [
-  'Program Manager',
-  'Monitoring and Evaluation Manager',
-  'Product Manager',
-  'Operations Manager',
-  'Project Coordinator',
-  'Statistician',
-  'Senior Data Scientist',
-  'Data Specialist',
-  'Senior Information Manager',
-  'Senior Information Management Officer',
-  'Data Analyst',
-]
-
-const PANEL_ROLE_PRESETS = [
-  'Panel Chair',
-  'Statistician',
-  'Senior Data Scientist',
-  'Data Specialist',
-  'Senior Information Manager',
-  'Senior Information Management Officer',
-  'Data Analyst',
-  'Behavioral Specialist',
-  'Technical Evaluator',
-  'Stakeholder Representative',
-]
-
-const NATIONALITY_OPTIONS = [
-  'Ugandan',
-  'Kenyan',
-  'British',
-  'Nigerian',
-  'South African',
-  'American',
-  'Indian',
-  'Australian',
-  'Irish',
-  'Canadian',
-]
 type VoiceGender = 'female' | 'male' | 'unknown'
 type PanelistGender = 'female' | 'male' | 'unknown'
 type AccentPreference = 'auto' | 'en-gb' | 'en-us' | 'en-au' | 'en-in' | 'en-za'
@@ -238,15 +199,14 @@ function App() {
   const [chatDateFilter, setChatDateFilter] = useState<'today' | 'yesterday' | '7d' | '30d'>('30d')
   const [webMode, setWebMode] = useState(false)
   const [interviewRole, setInterviewRole] = useState('Program Manager')
-  const [showPanelConfigDrawer, setShowPanelConfigDrawer] = useState(false)
-  const [interviewPanelMembers, setInterviewPanelMembers] = useState(3)
-  const [interviewOrgType, setInterviewOrgType] = useState<'un' | 'private_sector'>('un')
+  const [interviewPanelMembers] = useState(3)
+  const [interviewOrgType] = useState<'un' | 'private_sector'>('un')
   const [interviewOrgName, setInterviewOrgName] = useState('United Nations')
   const [interviewLocation, setInterviewLocation] = useState('New York')
-  const [interviewIsHq, setInterviewIsHq] = useState(true)
+  const [interviewIsHq] = useState(true)
   const [interviewRoleLevel, setInterviewRoleLevel] = useState<'P2' | 'P3' | 'P4' | 'P5' | 'D1' | 'D2'>('P3')
   const [interviewDurationMinutes, setInterviewDurationMinutes] = useState(30)
-  const [interviewDifficulty, setInterviewDifficulty] = useState<'medium' | 'high'>('medium')
+  const [interviewDifficulty] = useState<'medium' | 'high'>('medium')
   const [interviewRealismIntensity, setInterviewRealismIntensity] = useState<'low' | 'medium' | 'high' | 'extreme'>('medium')
   const [interviewPanelists, setInterviewPanelists] = useState<InterviewPanelist[]>(DEFAULT_PANELISTS.slice(0, 3))
   const [interviewSessionState, setInterviewSessionState] = useState<'idle' | 'running' | 'paused' | 'ended'>('idle')
@@ -418,7 +378,7 @@ function App() {
     return 'unknown'
   }
 
-  function getPanelistProfile(speakerName: string): InterviewPanelist {
+  const getPanelistProfile = useCallback((speakerName: string): InterviewPanelist => {
     const configured = interviewPanelists.find((entry) => entry.name === speakerName)
     if (configured) return configured
     return {
@@ -430,7 +390,7 @@ function App() {
       tone: 'neutral',
       speaking_style: 'structured',
     }
-  }
+  }, [interviewPanelists])
 
   function nationalityToLangPrefixes(nationality: string): string[] {
     const key = nationality.toLowerCase()
@@ -781,18 +741,6 @@ function App() {
     }
   }
 
-  function startCameraDockDrag(event: ReactMouseEvent<HTMLDivElement>) {
-    if (cameraDetached) return
-    const dock = cameraDockRef.current
-    if (!dock) return
-    cameraDraggingRef.current = {
-      active: true,
-      offsetX: event.clientX - cameraDockPosition.x,
-      offsetY: event.clientY - cameraDockPosition.y,
-    }
-    event.preventDefault()
-  }
-
   function startRailResize(event: ReactMouseEvent<HTMLDivElement>) {
     railResizeRef.current = {
       active: true,
@@ -976,7 +924,7 @@ function App() {
     if (!segments.length) return
     speakCbiSegments(segments)
     lastSpokenSignatureRef.current = signature
-  }, [messages, isCbiMode, cbiTtsEnabled, isSending, activeChatId])
+  }, [messages, isCbiMode, cbiTtsEnabled, isSending, activeChatId, speakCbiSegments])
 
   useEffect(() => {
     if (!isCbiMode) return
@@ -985,7 +933,7 @@ function App() {
     if (interviewAutoConcludeRef.current) return
     interviewAutoConcludeRef.current = true
     void handleEndInterviewSession('timeout')
-  }, [isCbiMode, interviewSessionState, interviewRemainingSeconds])
+  }, [isCbiMode, interviewSessionState, interviewRemainingSeconds, handleEndInterviewSession])
 
   useEffect(() => {
     void bootstrap()
@@ -2068,7 +2016,7 @@ function App() {
                     </div>
                     <div className="setup-field">
                       <label>Role Level</label>
-                      <select value={interviewRoleLevel} onChange={(e) => setInterviewRoleLevel(e.target.value as any)}>
+                      <select value={interviewRoleLevel} onChange={(e) => setInterviewRoleLevel(e.target.value as 'P2' | 'P3' | 'P4' | 'P5' | 'D1' | 'D2')}>
                         <option value="P2">P2 - Associate</option>
                         <option value="P3">P3 - Professional</option>
                         <option value="P4">P4 - Senior Professional</option>
@@ -2383,6 +2331,7 @@ function App() {
             style={{ left: `${cameraDockPosition.x}px`, top: `${cameraDockPosition.y}px` }}
           >
             {/* Standard camera dock logic preserved but hidden during active room session */}
+            {cameraError && <div className="camera-preview-error">{cameraError}</div>}
           </aside>
         ) : null}
       </main>

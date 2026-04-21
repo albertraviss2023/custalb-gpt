@@ -1,4 +1,7 @@
-.PHONY: backend-install backend-lint backend-test backend-run frontend-install frontend-lint frontend-test frontend-build up down k8s-apply k8s-delete
+.PHONY: backend-install backend-lint backend-test backend-run frontend-install frontend-lint frontend-test frontend-build validate up down k8s-apply k8s-delete
+
+validate: backend-lint backend-test frontend-lint frontend-build
+	@echo "Validation complete."
 
 backend-install:
 	cd backend && pip install -r requirements.txt && pip install -e .[dev]

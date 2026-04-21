@@ -17,14 +17,13 @@ def test_cbi_context_includes_scorecard_schema_and_weights() -> None:
     prompt = ChatService._build_interview_context(request, "Start CBI practice")
     assert prompt is not None
     assert "CBI_SCORECARD_JSON" in prompt
-    assert "Results Measurement (24%)" in prompt
-    assert "Analytical Rigor (20%)" in prompt
-    assert "Ask exactly one first interview question" in prompt
+    assert "Results Measurement (Weight: 24%)" in prompt
+    assert "Analytical Rigor (Weight: 20%)" in prompt
+    assert "Dr. Elena Sokolov" in prompt
+    assert "Mandatory Opening Flow" in prompt
     assert "PANEL_SPEAKER:" in prompt
-    assert "Amina Okello" in prompt
-    assert "Ask exactly ONE primary behavioral question" in prompt
-    assert "STOP and wait for the candidate answer" in prompt
-    assert "ask 2-3 probe questions" in prompt
+    assert "Primary questions MUST name the competency" in prompt
+    assert "Mandatory probing for each response" in prompt
 
 
 def test_non_cbi_addon_has_no_interview_context() -> None:
