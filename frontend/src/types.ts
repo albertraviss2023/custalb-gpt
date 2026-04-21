@@ -69,6 +69,7 @@ export interface ChatCompletionRequest {
     name: string
     title: string
     nationality?: string
+    voice_id?: string
     gender?: 'female' | 'male' | 'unknown'
     accent?: 'auto' | 'en-gb' | 'en-us' | 'en-au' | 'en-in' | 'en-za'
     tone?: 'formal' | 'probing' | 'neutral' | 'supportive' | 'skeptical'

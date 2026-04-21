@@ -81,15 +81,51 @@ type InterviewPanelist = {
   accent: AccentPreference
   tone: PanelistTone
   speaking_style: SpeakingStyle
+  voice_id?: string
   avatar_url?: string
 }
 
+type TranscriptEntry = {
+  id: string
+  role: UiMessage['role']
+  content: string
+  timestamp: string
+}
+
+type InterviewTimelineStep = {
+  id: string
+  timestamp: string
+  panel_speaker: string
+  question: string
+  user_response: string
+  followups: string[]
+  competency: string
+  evaluation_snapshot: CbiScorecard | null
+  assistant_message_id: string
+  user_message_id: string | null
+}
+
+type InterviewSessionSnapshot = {
+  captured_at: string
+  step_id: string | null
+  question_index: number
+  panel_state: {
+    active_speaker: string | null
+    session_state: 'idle' | 'running' | 'paused' | 'ended'
+  }
+  timer_remaining_seconds: number
+  competency_tracking: Record<string, number>
+  transcript_history: TranscriptEntry[]
+  timeline: InterviewTimelineStep[]
+  timeline_cursor: number
+}
+
 const DEFAULT_PANELISTS: InterviewPanelist[] = [
-  { name: 'Dr. Elena Sokolov', title: 'Panel Chair', nationality: 'Switzerland', gender: 'female', accent: 'en-gb', tone: 'formal', speaking_style: 'structured', avatar_url: 'https://i.pravatar.cc/150?u=elena' },
-  { name: 'Kwame Mensah', title: 'Technical Lead', nationality: 'Ghana', gender: 'male', accent: 'auto', tone: 'probing', speaking_style: 'strict', avatar_url: 'https://i.pravatar.cc/150?u=kwame' },
-  { name: 'Maria Garcia', title: 'HR Representative', nationality: 'Spain', gender: 'female', accent: 'auto', tone: 'supportive', speaking_style: 'conversational', avatar_url: 'https://i.pravatar.cc/150?u=maria' },
-  { name: 'Chen Wei', title: 'Director of Operations', nationality: 'China', gender: 'male', accent: 'auto', tone: 'skeptical', speaking_style: 'strict', avatar_url: 'https://i.pravatar.cc/150?u=chen' },
-  { name: 'Linda Miller', title: 'Stakeholder Representative', nationality: 'USA', gender: 'female', accent: 'en-us', tone: 'neutral', speaking_style: 'structured', avatar_url: 'https://i.pravatar.cc/150?u=linda' },
+  { name: 'Dr. Elena Sokolov', title: 'Panel Chair', nationality: 'Switzerland', gender: 'female', accent: 'en-gb', tone: 'formal', speaking_style: 'structured', voice_id: 'panel-chair', avatar_url: 'https://i.pravatar.cc/150?u=elena' },
+  { name: 'Kwame Mensah', title: 'Technical Lead', nationality: 'Ghana', gender: 'male', accent: 'auto', tone: 'probing', speaking_style: 'strict', voice_id: 'panel-tech', avatar_url: 'https://i.pravatar.cc/150?u=kwame' },
+  { name: 'Maria Garcia', title: 'HR Representative', nationality: 'Spain', gender: 'female', accent: 'auto', tone: 'supportive', speaking_style: 'conversational', voice_id: 'panel-hr', avatar_url: 'https://i.pravatar.cc/150?u=maria' },
+  { name: 'Chen Wei', title: 'Director of Operations', nationality: 'China', gender: 'male', accent: 'auto', tone: 'skeptical', speaking_style: 'strict', voice_id: 'panel-ops', avatar_url: 'https://i.pravatar.cc/150?u=chen' },
+  { name: 'Linda Miller', title: 'Stakeholder Representative', nationality: 'USA', gender: 'female', accent: 'en-us', tone: 'neutral', speaking_style: 'structured', voice_id: 'panel-stakeholder', avatar_url: 'https://i.pravatar.cc/150?u=linda' },
 ]
 
 const PANEL_GENDER_PREF: Record<string, VoiceGender> = {
@@ -221,6 +257,13 @@ function App() {
   const [voiceDraft, setVoiceDraft] = useState('')
   const [showAdvancedSetup, setShowAdvancedSetup] = useState(false)
   const [activeSpeaker, setActiveSpeaker] = useState<string | null>(null)
+  const [sessionTimeline, setSessionTimeline] = useState<InterviewTimelineStep[]>([])
+  const [timelineCursor, setTimelineCursor] = useState(-1)
+  const [timelineTargetId, setTimelineTargetId] = useState<string>('')
+  const [competencyTracking, setCompetencyTracking] = useState<Record<string, number>>({})
+  const [transcriptHistory, setTranscriptHistory] = useState<TranscriptEntry[]>([])
+  const [pausedSnapshot, setPausedSnapshot] = useState<InterviewSessionSnapshot | null>(null)
+  const [branchBaseMessages, setBranchBaseMessages] = useState<UiMessage[] | null>(null)
 
   const [chats, setChats] = useState<ChatSummary[]>([])
   const [activeChatId, setActiveChatId] = useState<string | null>(null)
@@ -260,6 +303,8 @@ function App() {
   const voiceRotationRef = useRef<{ female: number; male: number; unknown: number }>({ female: 0, male: 0, unknown: 0 })
   const lastSpokenSignatureRef = useRef<string>('')
   const interviewAutoConcludeRef = useRef(false)
+  const timelineSnapshotsRef = useRef<Record<string, InterviewSessionSnapshot>>({})
+  const ttsSessionRef = useRef(0)
   const [voiceLevel, setVoiceLevel] = useState(0)
   const voiceMeterRafRef = useRef<number | null>(null)
   const voiceMeterContextRef = useRef<AudioContext | null>(null)
@@ -351,6 +396,12 @@ function App() {
   }, [isSending])
 
   useEffect(() => {
+    if (!sessionTimeline.length) return
+    if (timelineTargetId && sessionTimeline.some((step) => step.id === timelineTargetId)) return
+    setTimelineTargetId(sessionTimeline[sessionTimeline.length - 1].id)
+  }, [sessionTimeline, timelineTargetId])
+
+  useEffect(() => {
     const defaultX = Math.max(12, window.innerWidth - 390)
     const defaultY = Math.max(72, window.innerHeight - 310)
     setCameraDockPosition({ x: defaultX, y: defaultY })
@@ -388,6 +439,7 @@ function App() {
       name: speakerName,
       title: 'Panel Member',
       nationality: PANEL_NATIONALITY_PREF[speakerName] || '',
+      voice_id: `voice-${speakerName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
       gender: PANEL_GENDER_PREF[speakerName] || (hashSpeaker(speakerName) % 2 === 0 ? 'female' : 'male'),
       accent: PANEL_ACCENT_PREF[speakerName] || 'auto',
       tone: 'neutral',
@@ -513,7 +565,7 @@ function App() {
     return picked
   }
 
-  function parsePanelSpeechSegments(content: string): Array<{ speaker: string; text: string; nationality?: string; gender?: PanelistGender; accent?: AccentPreference }> {
+  const parsePanelSpeechSegments = useCallback((content: string): Array<{ speaker: string; text: string; nationality?: string; gender?: PanelistGender; accent?: AccentPreference }> => {
     const segments: Array<{ speaker: string; text: string; nationality?: string; gender?: PanelistGender; accent?: AccentPreference }> = []
     const lines = content.split('\n').map((line) => line.trim()).filter(Boolean)
     let pendingSpeaker: string | null = null
@@ -591,7 +643,7 @@ function App() {
       if (readable) segments.push({ speaker: 'Panel', text: readable, nationality: '', gender: 'unknown', accent: 'auto' })
     }
     return segments
-  }
+  }, [getPanelistProfile])
 
   function extractCbiScorecard(content: string): CbiScorecard | null {
     const marker = 'CBI_SCORECARD_JSON:'
@@ -631,25 +683,166 @@ function App() {
     return content.slice(0, index).trim()
   }
 
+  function getFollowups(content: string): string[] {
+    const clean = stripCbiScorecardBlock(content)
+    const lines = clean.split('\n').map((line) => line.trim()).filter(Boolean)
+    return lines
+      .filter((line) => /follow[\s-]?up/i.test(line))
+      .map((line) => line.replace(/^[-*]\s*/, '').trim())
+      .slice(0, 5)
+  }
+
+  function detectCompetency(content: string, scorecard: CbiScorecard | null): string {
+    if (scorecard?.competencies?.length) return scorecard.competencies[0]?.name || 'General'
+    const match = content.match(/assess(?:es|ing)?\s+([A-Za-z][A-Za-z\s-]{2,40})/i)
+    if (match?.[1]) return match[1].trim()
+    return 'General'
+  }
+
+  function buildTranscriptFromMessages(items: UiMessage[]): TranscriptEntry[] {
+    return items.map((message) => ({
+      id: message.id,
+      role: message.role,
+      content: message.content,
+      timestamp: new Date().toISOString(),
+    }))
+  }
+
+  function computeCompetencyTracking(items: InterviewTimelineStep[]): Record<string, number> {
+    const tracking: Record<string, number> = {}
+    for (const step of items) {
+      if (step.evaluation_snapshot?.competencies?.length) {
+        for (const competency of step.evaluation_snapshot.competencies) {
+          const pct = Math.round((competency.score_1_to_5 / 5) * 100)
+          tracking[competency.name] = pct
+        }
+      } else if (step.competency) {
+        tracking[step.competency] = tracking[step.competency] ?? 0
+      }
+    }
+    return tracking
+  }
+
+  function applyInterviewSnapshot(snapshot: InterviewSessionSnapshot) {
+    setInterviewSessionState(snapshot.panel_state.session_state)
+    setActiveSpeaker(snapshot.panel_state.active_speaker)
+    setInterviewRemainingSeconds(snapshot.timer_remaining_seconds)
+    setCompetencyTracking(snapshot.competency_tracking)
+    setTranscriptHistory(snapshot.transcript_history)
+    setSessionTimeline(snapshot.timeline)
+    setTimelineCursor(snapshot.timeline_cursor)
+    setTimelineTargetId(snapshot.step_id ?? '')
+  }
+
+  function buildInterviewSnapshot(
+    stepId: string | null,
+    nextTimeline: InterviewTimelineStep[],
+    nextTranscript: TranscriptEntry[],
+    sessionStateOverride?: 'idle' | 'running' | 'paused' | 'ended',
+  ): InterviewSessionSnapshot {
+    const cursor = stepId ? Math.max(0, nextTimeline.findIndex((step) => step.id === stepId)) : timelineCursor
+    return {
+      captured_at: new Date().toISOString(),
+      step_id: stepId,
+      question_index: Math.max(0, cursor + 1),
+      panel_state: {
+        active_speaker: activeSpeaker,
+        session_state: sessionStateOverride ?? interviewSessionState,
+      },
+      timer_remaining_seconds: interviewRemainingSeconds,
+      competency_tracking: computeCompetencyTracking(nextTimeline),
+      transcript_history: nextTranscript,
+      timeline: nextTimeline,
+      timeline_cursor: cursor,
+    }
+  }
+
+  function rewindToTimelineStep(stepId: string) {
+    const targetStep = sessionTimeline.find((step) => step.id === stepId)
+    if (!targetStep) return
+    const snapshot = timelineSnapshotsRef.current[stepId]
+    if (snapshot) {
+      applyInterviewSnapshot({ ...snapshot, panel_state: { ...snapshot.panel_state, session_state: 'paused' } })
+      setPausedSnapshot({ ...snapshot, panel_state: { ...snapshot.panel_state, session_state: 'paused' } })
+    }
+    const assistantIndex = messages.findIndex((message) => message.id === targetStep.assistant_message_id)
+    if (assistantIndex >= 0) {
+      const trimmed = messages.slice(0, assistantIndex + 1)
+      setMessages(trimmed)
+      setBranchBaseMessages(trimmed)
+      const transcript = buildTranscriptFromMessages(trimmed)
+      setTranscriptHistory(transcript)
+    }
+    setInterviewSessionState('paused')
+    setActiveSpeaker(null)
+    window.speechSynthesis?.cancel()
+    setTimelineCursor(sessionTimeline.findIndex((step) => step.id === stepId))
+    setTimelineTargetId(stepId)
+  }
+
+  function toneToProsody(tone: PanelistTone, speakingStyle: SpeakingStyle): { rate: number; pitch: number; volume: number } {
+    const toneMap: Record<PanelistTone, { rate: number; pitch: number; volume: number }> = {
+      formal: { rate: 0.96, pitch: 0.95, volume: 0.98 },
+      probing: { rate: 0.98, pitch: 0.9, volume: 1 },
+      neutral: { rate: 1, pitch: 1, volume: 0.98 },
+      supportive: { rate: 0.94, pitch: 1.06, volume: 0.96 },
+      skeptical: { rate: 0.92, pitch: 0.88, volume: 0.99 },
+    }
+    const styleMap: Record<SpeakingStyle, number> = {
+      fast: 0.08,
+      structured: -0.03,
+      conversational: 0.02,
+      strict: -0.05,
+    }
+    const base = toneMap[tone]
+    const rate = Math.max(0.78, Math.min(1.18, base.rate + styleMap[speakingStyle]))
+    return { rate, pitch: base.pitch, volume: base.volume }
+  }
+
+  function splitSpeechChunks(text: string): string[] {
+    const normalized = text.replace(/\s+/g, ' ').trim()
+    if (!normalized) return []
+    const chunks = normalized.split(/(?<=[.!?;:])\s+/).filter(Boolean)
+    return chunks.length ? chunks : [normalized]
+  }
+
   function speakCbiSegments(segments: Array<{ speaker: string; text: string; nationality?: string; gender?: PanelistGender; accent?: AccentPreference }>) {
     if (!segments.length) return
     const synth = window.speechSynthesis
     if (!synth) return
+    ttsSessionRef.current += 1
+    const currentSession = ttsSessionRef.current
     synth.cancel()
     for (const segment of segments) {
-      const utter = new SpeechSynthesisUtterance(segment.text)
-      utter.onstart = () => setActiveSpeaker(segment.speaker)
-      utter.onend = () => setActiveSpeaker(null)
       const voice = getVoiceForSpeaker(segment.speaker, {
         nationality: segment.nationality,
         gender: segment.gender,
         accent: segment.accent,
       })
-      if (voice) utter.voice = voice
-      const desired = segment.gender || PANEL_GENDER_PREF[segment.speaker] || (hashSpeaker(segment.speaker) % 2 === 0 ? 'female' : 'male')
-      utter.rate = desired === 'female' ? 1.02 : 0.98
-      utter.pitch = desired === 'female' ? 1.08 : 0.92
-      synth.speak(utter)
+      const panelist = getPanelistProfile(segment.speaker)
+      const prosody = toneToProsody(panelist.tone, panelist.speaking_style)
+      for (const chunk of splitSpeechChunks(segment.text)) {
+        const utter = new SpeechSynthesisUtterance(chunk)
+        utter.onstart = () => {
+          if (currentSession !== ttsSessionRef.current) return
+          setActiveSpeaker(segment.speaker)
+        }
+        utter.onend = () => {
+          if (currentSession !== ttsSessionRef.current) return
+          if (!synth.speaking && !synth.pending) {
+            setActiveSpeaker(null)
+          }
+        }
+        utter.onerror = () => {
+          if (currentSession !== ttsSessionRef.current) return
+          setActiveSpeaker(null)
+        }
+        if (voice) utter.voice = voice
+        utter.rate = prosody.rate
+        utter.pitch = prosody.pitch
+        utter.volume = prosody.volume
+        synth.speak(utter)
+      }
     }
   }
 
@@ -762,36 +955,70 @@ function App() {
       await startInterviewCamera()
     }
     
+    if (resume) {
+      const snapshot = pausedSnapshot ?? (timelineTargetId ? timelineSnapshotsRef.current[timelineTargetId] : null)
+      if (snapshot) {
+        applyInterviewSnapshot({ ...snapshot, panel_state: { ...snapshot.panel_state, session_state: 'running' } })
+      }
+      setInterviewSessionState('running')
+      interviewAutoConcludeRef.current = false
+      return
+    }
+
     setInterviewSessionState('running')
     interviewAutoConcludeRef.current = false
-    
-    if (resume) {
-      // Just notify the panel we are back
-      await handleSend(
-        'I am back. Please continue the interview from where we left off.',
-        false,
-        true,
-      )
-    } else {
-      // Fresh start
-      await handleSend(
-        'Start CBI practice now. Ask exactly one primary UN-style competency question only, then wait for my answer.',
-        false,
-        true,
-      )
-    }
+    setBranchBaseMessages(null)
+    setPausedSnapshot(null)
+    timelineSnapshotsRef.current = {}
+    setSessionTimeline([])
+    setTimelineCursor(-1)
+    setTimelineTargetId('')
+    setTranscriptHistory([])
+    setCompetencyTracking({})
+
+    await handleSend(
+      'Start CBI practice now. Ask exactly one primary UN-style competency question only, then wait for my answer.',
+      false,
+      true,
+    )
   }
 
   function handlePauseInterviewSession() {
     if (interviewSessionState !== 'running') return
+    const snapshot = buildInterviewSnapshot(
+      timelineCursor >= 0 ? sessionTimeline[timelineCursor]?.id ?? null : null,
+      sessionTimeline,
+      transcriptHistory.length ? transcriptHistory : buildTranscriptFromMessages(messages),
+      'paused',
+    )
+    setPausedSnapshot(snapshot)
+    if (snapshot.step_id) {
+      timelineSnapshotsRef.current[snapshot.step_id] = snapshot
+    }
     setInterviewSessionState('paused')
+    setActiveSpeaker(null)
+    ttsSessionRef.current += 1
     window.speechSynthesis?.cancel()
+  }
+
+  async function handleResumeFromTimeline() {
+    if (interviewSessionState !== 'paused') return
+    const hasBranch = Boolean(branchBaseMessages && branchBaseMessages.length)
+    await handleStartInterviewSession(true)
+    if (!hasBranch) return
+    await handleSend(
+      'Continue this interview from the previously selected timeline checkpoint. Keep the same panel context and continue with the next logical probing question only.',
+      false,
+      true,
+    )
   }
 
   async function handleEndInterviewSession(reason: 'manual' | 'timeout' = 'manual') {
     if (!isCbiMode) return
     setInterviewSessionState('ended')
     stopInterviewCamera()
+    setActiveSpeaker(null)
+    ttsSessionRef.current += 1
     window.speechSynthesis?.cancel()
     const closingPrompt = reason === 'timeout'
       ? `Interview timer has reached ${interviewDurationMinutes} minutes. Conclude the panel and generate final CBI performance report now.`
@@ -821,6 +1048,9 @@ function App() {
           nationality: '',
           gender: i % 2 === 0 ? 'female' : 'male',
           accent: 'auto',
+          tone: 'neutral',
+          speaking_style: 'structured',
+          voice_id: `panelist-${i + 1}`,
         })
       }
       return next
@@ -839,6 +1069,14 @@ function App() {
     setInterviewSessionState('idle')
     setInterviewRemainingSeconds(interviewDurationMinutes * 60)
     interviewAutoConcludeRef.current = false
+    setSessionTimeline([])
+    setTimelineCursor(-1)
+    setTimelineTargetId('')
+    setPausedSnapshot(null)
+    setBranchBaseMessages(null)
+    setTranscriptHistory([])
+    setCompetencyTracking({})
+    timelineSnapshotsRef.current = {}
     stopInterviewCamera()
     setCameraError(null)
   }, [activeChatId, interviewDurationMinutes])
@@ -846,9 +1084,62 @@ function App() {
   useEffect(() => {
     if (!isCbiMode) {
       setInterviewSessionState('idle')
+      setSessionTimeline([])
+      setTimelineCursor(-1)
+      setTimelineTargetId('')
+      setPausedSnapshot(null)
+      setBranchBaseMessages(null)
+      setTranscriptHistory([])
+      setCompetencyTracking({})
+      timelineSnapshotsRef.current = {}
       stopInterviewCamera()
     }
   }, [isCbiMode])
+
+  useEffect(() => {
+    if (!activeChatId || !isCbiMode) return
+    const storageKey = `cbi-session:${activeChatId}`
+    const payload = {
+      timeline: sessionTimeline,
+      cursor: timelineCursor,
+      targetId: timelineTargetId,
+      pausedSnapshot,
+      competencyTracking,
+      transcriptHistory,
+    }
+    window.localStorage.setItem(storageKey, JSON.stringify(payload))
+  }, [activeChatId, isCbiMode, sessionTimeline, timelineCursor, timelineTargetId, pausedSnapshot, competencyTracking, transcriptHistory])
+
+  useEffect(() => {
+    if (!activeChatId || !isCbiMode) return
+    const storageKey = `cbi-session:${activeChatId}`
+    const raw = window.localStorage.getItem(storageKey)
+    if (!raw) return
+    try {
+      const parsed = JSON.parse(raw) as {
+        timeline?: InterviewTimelineStep[]
+        cursor?: number
+        targetId?: string
+        pausedSnapshot?: InterviewSessionSnapshot | null
+        competencyTracking?: Record<string, number>
+        transcriptHistory?: TranscriptEntry[]
+      }
+      const restoredTimeline = parsed.timeline ?? []
+      setSessionTimeline(restoredTimeline)
+      setTimelineCursor(typeof parsed.cursor === 'number' ? parsed.cursor : restoredTimeline.length - 1)
+      setTimelineTargetId(parsed.targetId ?? '')
+      setPausedSnapshot(parsed.pausedSnapshot ?? null)
+      setCompetencyTracking(parsed.competencyTracking ?? {})
+      setTranscriptHistory(parsed.transcriptHistory ?? [])
+      timelineSnapshotsRef.current = Object.fromEntries(
+        restoredTimeline.map((step) => [step.id, parsed.pausedSnapshot && parsed.pausedSnapshot.step_id === step.id ? parsed.pausedSnapshot : buildInterviewSnapshot(step.id, restoredTimeline, parsed.transcriptHistory ?? [])]),
+      )
+    } catch {
+      // Ignore malformed local state.
+    }
+    // only load on chat switch
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeChatId, isCbiMode])
 
   useEffect(() => {
     if (!isCbiMode || !cameraActive) return
@@ -935,7 +1226,45 @@ function App() {
     if (!segments.length) return
     speakCbiSegments(segments)
     lastSpokenSignatureRef.current = signature
-  }, [messages, isCbiMode, cbiTtsEnabled, isSending, activeChatId, speakCbiSegments])
+  }, [messages, isCbiMode, cbiTtsEnabled, isSending, interviewSessionState, activeChatId, parsePanelSpeechSegments, speakCbiSegments])
+
+  useEffect(() => {
+    if (!isCbiMode) return
+    if (sessionTimeline.length > 0) return
+    const built: InterviewTimelineStep[] = []
+    for (let i = 0; i < messages.length; i += 1) {
+      const message = messages[i]
+      if (message.role !== 'assistant') continue
+      const prevUser = [...messages.slice(0, i)].reverse().find((candidate) => candidate.role === 'user')
+      const scorecard = extractCbiScorecard(message.content)
+      const segments = parsePanelSpeechSegments(message.content)
+      built.push({
+        id: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+        panel_speaker: segments[0]?.speaker ?? 'Panel',
+        question: stripCbiScorecardBlock(message.content).slice(0, 1200),
+        user_response: prevUser?.content ?? '',
+        followups: getFollowups(message.content),
+        competency: detectCompetency(message.content, scorecard),
+        evaluation_snapshot: scorecard,
+        assistant_message_id: message.id,
+        user_message_id: prevUser?.id ?? null,
+      })
+    }
+    if (!built.length) return
+    setSessionTimeline(built)
+    setTimelineCursor(built.length - 1)
+    setTimelineTargetId(built[built.length - 1].id)
+    const transcript = buildTranscriptFromMessages(messages)
+    setTranscriptHistory(transcript)
+    const tracking = computeCompetencyTracking(built)
+    setCompetencyTracking(tracking)
+    for (const step of built) {
+      timelineSnapshotsRef.current[step.id] = buildInterviewSnapshot(step.id, built, transcript)
+    }
+    // bootstrap once from persisted chat messages
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCbiMode, messages, sessionTimeline.length])
 
   useEffect(() => {
     if (!isCbiMode) return
@@ -1270,6 +1599,7 @@ function App() {
           name: panelist.name,
           title: panelist.title,
           nationality: panelist.nationality,
+          voice_id: panelist.voice_id,
           gender: panelist.gender,
           accent: panelist.accent,
           tone: panelist.tone,
@@ -1449,6 +1779,7 @@ function App() {
       }
 
       const priorMessages = toUiMessages(workingChat)
+      const baseMessages = isCbiMode && branchBaseMessages?.length ? branchBaseMessages : priorMessages
 
       let userMessageContent: string | Array<{ type: string; text?: string; image_url?: { url: string } }> = content
       if (pastedImages.length > 0) {
@@ -1466,12 +1797,12 @@ function App() {
       }
       const assistantMessage: UiMessage = { id: crypto.randomUUID(), role: 'assistant', content: '' }
 
-      setMessages([...priorMessages, userMessage, assistantMessage])
+      setMessages([...baseMessages, userMessage, assistantMessage])
       setPastedImages([])
 
       const modelId = (workingChat?.selected_model_id ?? defaultModelId) || undefined
       const requestMessages: MessageInput[] = [
-        ...priorMessages.map((m) => ({ role: m.role, content: m.content })),
+        ...baseMessages.map((m) => ({ role: m.role, content: m.content })),
         { role: 'user', content: userMessage.content },
       ]
 
@@ -1507,6 +1838,7 @@ function App() {
             name: panelist.name,
             title: panelist.title,
             nationality: panelist.nationality,
+            voice_id: panelist.voice_id,
             gender: panelist.gender,
             accent: panelist.accent,
             tone: panelist.tone,
@@ -1554,6 +1886,7 @@ function App() {
               name: panelist.name,
               title: panelist.title,
               nationality: panelist.nationality,
+              voice_id: panelist.voice_id,
               gender: panelist.gender,
               accent: panelist.accent,
               tone: panelist.tone,
@@ -1580,8 +1913,47 @@ function App() {
       })
 
       const refreshed = await getChat(chatId)
+      const refreshedMessages = toUiMessages(refreshed)
       setActiveChat(refreshed)
-      setMessages(toUiMessages(refreshed))
+      setMessages(refreshedMessages)
+      if (isCbiMode) {
+        const transcript = buildTranscriptFromMessages(refreshedMessages)
+        setTranscriptHistory(transcript)
+        const latestAssistant = [...refreshedMessages].reverse().find((message) => message.role === 'assistant')
+        const latestAssistantIndex = latestAssistant ? refreshedMessages.findIndex((message) => message.id === latestAssistant.id) : -1
+        const latestUser = latestAssistantIndex > 0 ? [...refreshedMessages.slice(0, latestAssistantIndex)].reverse().find((message) => message.role === 'user') : null
+        if (latestAssistant) {
+          const segments = parsePanelSpeechSegments(latestAssistant.content)
+          const primaryQuestion = stripCbiScorecardBlock(latestAssistant.content)
+          const scorecard = extractCbiScorecard(latestAssistant.content)
+          const step: InterviewTimelineStep = {
+            id: crypto.randomUUID(),
+            timestamp: new Date().toISOString(),
+            panel_speaker: segments[0]?.speaker ?? 'Panel',
+            question: primaryQuestion.slice(0, 1200),
+            user_response: latestUser?.content ?? '',
+            followups: getFollowups(latestAssistant.content),
+            competency: detectCompetency(latestAssistant.content, scorecard),
+            evaluation_snapshot: scorecard,
+            assistant_message_id: latestAssistant.id,
+            user_message_id: latestUser?.id ?? null,
+          }
+          setSessionTimeline((current) => {
+            const branchCut = branchBaseMessages?.length ? Math.max(0, timelineCursor + 1) : current.length
+            const anchored = current.slice(0, branchCut)
+            const next = [...anchored, step]
+            setTimelineCursor(next.length - 1)
+            setTimelineTargetId(step.id)
+            const nextTracking = computeCompetencyTracking(next)
+            setCompetencyTracking(nextTracking)
+            const snapshot = buildInterviewSnapshot(step.id, next, transcript)
+            timelineSnapshotsRef.current[step.id] = snapshot
+            return next
+          })
+        }
+      }
+      setBranchBaseMessages(null)
+      setPausedSnapshot(null)
       const telemetry = await getChatTelemetry(chatId)
       setChatTelemetry(telemetry)
       await refreshChats(chatId)
@@ -1814,6 +2186,7 @@ function App() {
                 ) : (
                   <>
                     <button className="secondary-btn" onClick={handlePauseInterviewSession} disabled={interviewSessionState !== 'running'}>Pause</button>
+                    <button className="secondary-btn" onClick={() => void handleResumeFromTimeline()} disabled={interviewSessionState !== 'paused'}>Resume Interview</button>
                     <button className="secondary-btn" onClick={() => void handleEndInterviewSession('manual')}>End Session</button>
                   </>
                 )}
@@ -1835,6 +2208,11 @@ function App() {
                         ) : (
                           panelist.name.charAt(0)
                         )}
+                        <span className={`speaker-wave ${activeSpeaker === panelist.name ? 'live' : ''}`} aria-hidden="true">
+                          <i />
+                          <i />
+                          <i />
+                        </span>
                       </div>
                       <div className="panelist-info">
                         <div className="panelist-name">{panelist.name}</div>
@@ -1845,6 +2223,43 @@ function App() {
                   ))}
                 </div>
 
+                <div className="timeline-controls">
+                  <div className="timeline-controls-head">
+                    <strong>Interview Timeline</strong>
+                    <span>{sessionTimeline.length} steps</span>
+                  </div>
+                  <div className="timeline-controls-row">
+                    <select
+                      className="model-selector"
+                      value={timelineTargetId}
+                      onChange={(event) => setTimelineTargetId(event.target.value)}
+                      disabled={sessionTimeline.length === 0}
+                    >
+                      <option value="">Select step</option>
+                      {sessionTimeline.map((step, index) => (
+                        <option key={step.id} value={step.id}>
+                          Step {index + 1}: {step.competency || 'General'} - {step.panel_speaker}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      className="secondary-btn"
+                      onClick={() => {
+                        if (!timelineTargetId) return
+                        rewindToTimelineStep(timelineTargetId)
+                      }}
+                      disabled={!timelineTargetId || sessionTimeline.length === 0}
+                    >
+                      Rewind
+                    </button>
+                  </div>
+                  {timelineCursor >= 0 && sessionTimeline[timelineCursor] ? (
+                    <div className="timeline-active-step">
+                      Active checkpoint: Step {timelineCursor + 1} ({sessionTimeline[timelineCursor].competency || 'General'})
+                    </div>
+                  ) : null}
+                </div>
+
                 <div className="current-question-box">
                   <div className="question-label">
                     <span>Panel Evaluation / Current Question</span>
@@ -1852,6 +2267,39 @@ function App() {
                   </div>
                   <div className="question-text">
                     {(() => {
+                      if (interviewSessionState === 'idle') {
+                        return (
+                          <div className="idle-start-container" style={{ textAlign: 'center', padding: '1rem 0' }}>
+                            <p style={{ marginBottom: '1.5rem', fontSize: '0.9rem', color: '#718096' }}>The panel is ready. Click below to begin your competency-based interview.</p>
+                            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
+                              <button 
+                                className="primary-setup-btn" 
+                                onClick={() => void handleStartInterviewSession(false)}
+                                style={{ 
+                                  display: 'flex', 
+                                  alignItems: 'center', 
+                                  gap: '0.75rem', 
+                                  fontSize: '1.1rem',
+                                  padding: '0.75rem 2rem',
+                                  background: '#2f64e1'
+                                }}
+                              >
+                                <span style={{ fontSize: '1.2rem' }}>▶</span> Start Practice
+                              </button>
+                              {(messages.length > 0 || sessionTimeline.length > 0) && (
+                                <button 
+                                  className="primary-setup-btn" 
+                                  style={{ background: '#48bb78', padding: '0.75rem 1.5rem', fontSize: '1rem' }} 
+                                  onClick={() => void handleResumeFromTimeline()}
+                                >
+                                  Resume Interview
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      }
+
                       const latestAssistant = [...messages].reverse().find(m => m.role === 'assistant')
                       if (!latestAssistant) return 'Waiting for panel to begin...'
                       const scorecard = extractCbiScorecard(latestAssistant.content)
@@ -2067,11 +2515,11 @@ function App() {
                     </button>
                     
                     <div style={{ display: 'flex', gap: '1rem', width: '100%' }}>
-                      {messages.length > 0 && (
+                      {(messages.length > 0 || sessionTimeline.length > 0) && (
                         <button 
                           className="primary-setup-btn" 
                           style={{ background: '#48bb78', flex: 1 }} 
-                          onClick={() => void handleStartInterviewSession(true)}
+                          onClick={() => void handleResumeFromTimeline()}
                         >
                           Resume Session
                         </button>
@@ -2134,6 +2582,16 @@ function App() {
                             </div>
                             <div className="setup-field">
                               <label>Voice & Accent</label>
+                              <input
+                                className="interview-input"
+                                style={{ marginBottom: '0.25rem' }}
+                                value={panelist.voice_id ?? ''}
+                                onChange={(e) => {
+                                  const val = e.target.value
+                                  setInterviewPanelists(curr => curr.map((p, i) => i === idx ? { ...p, voice_id: val } : p))
+                                }}
+                                placeholder="Voice ID"
+                              />
                               <select className="model-selector" style={{ marginBottom: '0.25rem' }} value={panelist.gender} onChange={(e) => {
                                 const val = e.target.value as PanelistGender;
                                 setInterviewPanelists(curr => curr.map((p, i) => i === idx ? { ...p, gender: val } : p));

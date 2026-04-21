@@ -2,8 +2,13 @@ name: Pipeline
 
 on:
   push:
-    branches: ["main"]
+    branches: ["dev", "main"]
   pull_request:
+    branches: ["dev", "main"]
+
+concurrency:
+  group: pipeline-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   validate:
@@ -26,8 +31,11 @@ jobs:
           pip install -e backend/.[dev]
           cd frontend && npm install
 
-      - name: Validate
+      - name: Validate (lint, tests, build checks)
         run: make validate
+
+      - name: Frontend Unit Tests
+        run: make frontend-test
 
   build-and-push:
     runs-on: ubuntu-latest

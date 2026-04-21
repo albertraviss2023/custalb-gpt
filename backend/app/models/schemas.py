@@ -30,6 +30,7 @@ class InterviewPanelMemberInput(ApiModel):
     name: str
     title: str
     nationality: str | None = None
+    voice_id: str | None = None
     gender: Literal["female", "male", "unknown"] | None = None
     accent: Literal["auto", "en-gb", "en-us", "en-au", "en-in", "en-za"] | None = None
     tone: Literal["formal", "probing", "neutral", "supportive", "skeptical"] | None = "neutral"

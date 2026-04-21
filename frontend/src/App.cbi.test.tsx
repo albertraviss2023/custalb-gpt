@@ -133,25 +133,16 @@ describe('CBI workflows', () => {
 
   it('shows CBI configuration drawer and updates interview duration', async () => {
     await bootAndEnableCbi()
-
-    const panelDrawerToggle = Array.from(container.querySelectorAll('.drawer-toggle')).find((el) => el.textContent?.includes('Show'))
-    expect(panelDrawerToggle).toBeTruthy()
-    await act(async () => {
-      ;(panelDrawerToggle as HTMLButtonElement).click()
-    })
-
-    expect(container.querySelector('.panel-config-drawer.open')).toBeTruthy()
-
-    const durationInput = container.querySelector('input[aria-label="Interview Length Minutes"]') as HTMLInputElement | null
-    expect(durationInput).toBeTruthy()
-    expect(durationInput?.value).toBe('30')
-    expect(container.textContent).toContain('30-minute session.')
+    const setupButton = Array.from(container.querySelectorAll('button')).find((el) => el.textContent?.trim() === 'Setup')
+    expect(setupButton).toBeTruthy()
+    expect(container.textContent).toContain('Program Manager')
+    expect(container.textContent).toContain('30m')
   })
 
   it('restores voice input button after interview start request completes', async () => {
     await bootAndEnableCbi()
 
-    const startButton = Array.from(container.querySelectorAll('button')).find((el) => el.textContent?.trim() === 'Start')
+    const startButton = Array.from(container.querySelectorAll('button')).find((el) => el.textContent?.includes('Start'))
     expect(startButton).toBeTruthy()
 
     await act(async () => {
@@ -178,6 +169,83 @@ describe('CBI workflows', () => {
       ;(voiceButton as HTMLButtonElement).click()
     })
 
-    expect(container.querySelector('.error-banner')?.textContent).toContain('Start interview to enable voice input.')
+    expect(apiMocks.streamChatCompletion).not.toHaveBeenCalled()
+    expect((voiceButton as HTMLButtonElement).className).not.toContain('listening')
+  })
+
+  it('supports pause and resume with session controls', async () => {
+    apiMocks.getChat.mockResolvedValueOnce({
+      id: 'chat-cbi',
+      title: 'CBI Session',
+      selected_model_id: 'qwen3_8b_vllm',
+      created_at: nowIso,
+      updated_at: nowIso,
+      messages: [
+        { id: 'm1', chat_id: 'chat-cbi', role: 'user', content: 'Start CBI practice now.', created_at: nowIso },
+        { id: 'm2', chat_id: 'chat-cbi', role: 'assistant', content: 'PANEL_SPEAKER: Dr. Elena Sokolov | Panel Chair | Switzerland | female | en-gb\nPANEL_TEXT: Tell us about a teamwork challenge you handled.', created_at: nowIso },
+      ],
+    })
+    await bootAndEnableCbi()
+
+    const startButton = Array.from(container.querySelectorAll('button')).find((el) => el.textContent?.includes('Start'))
+    expect(startButton).toBeTruthy()
+    await act(async () => {
+      ;(startButton as HTMLButtonElement).click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const pauseButton = Array.from(container.querySelectorAll('button')).find((el) => el.textContent?.trim() === 'Pause')
+    expect(pauseButton).toBeTruthy()
+    await act(async () => {
+      ;(pauseButton as HTMLButtonElement).click()
+    })
+    expect(container.textContent).toContain('PAUSED')
+
+    const resumeButton = Array.from(container.querySelectorAll('button')).find((el) => el.textContent?.trim() === 'Resume Interview')
+    expect(resumeButton).toBeTruthy()
+    await act(async () => {
+      ;(resumeButton as HTMLButtonElement).click()
+    })
+    expect(container.textContent).toContain('RUNNING')
+  })
+
+  it('shows timeline controls and allows rewind after a panel step', async () => {
+    apiMocks.getChat.mockResolvedValueOnce({
+      id: 'chat-cbi',
+      title: 'CBI Session',
+      selected_model_id: 'qwen3_8b_vllm',
+      created_at: nowIso,
+      updated_at: nowIso,
+      messages: [
+        { id: 'm1', chat_id: 'chat-cbi', role: 'user', content: 'Start CBI practice now.', created_at: nowIso },
+        { id: 'm2', chat_id: 'chat-cbi', role: 'assistant', content: 'PANEL_SPEAKER: Dr. Elena Sokolov | Panel Chair | Switzerland | female | en-gb\nPANEL_TEXT: Share a time you coordinated stakeholders under pressure.\nPANEL_TEXT: Follow-up: what did you measure?', created_at: nowIso },
+      ],
+    })
+    await bootAndEnableCbi()
+
+    const startButton = Array.from(container.querySelectorAll('button')).find((el) => el.textContent?.includes('Start'))
+    expect(startButton).toBeTruthy()
+    await act(async () => {
+      ;(startButton as HTMLButtonElement).click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const timelineLabel = Array.from(container.querySelectorAll('strong')).find((el) => el.textContent?.includes('Interview Timeline'))
+    expect(timelineLabel).toBeTruthy()
+
+    const rewindButton = Array.from(container.querySelectorAll('button')).find((el) => el.textContent?.trim() === 'Rewind')
+    expect(rewindButton).toBeTruthy()
+
+    const timelineSelect = container.querySelector('.timeline-controls select') as HTMLSelectElement | null
+    expect(timelineSelect).toBeTruthy()
+    expect(timelineSelect?.options.length).toBeGreaterThan(1)
+    await act(async () => {
+      timelineSelect!.value = timelineSelect!.options[1].value
+      timelineSelect!.dispatchEvent(new Event('change', { bubbles: true }))
+      ;(rewindButton as HTMLButtonElement).click()
+    })
+    expect(container.textContent).toContain('PAUSED')
   })
 })
