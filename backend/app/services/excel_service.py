@@ -22,6 +22,7 @@ Your goal is to parse user natural-language instructions and map them to specifi
 You must output a valid JSON object matching the ExcelActionPlan schema.
 
 Available action_type values:
+- summarize_sheet: Summarize what the active sheet/workbook is about.
 - create_formula_column: Add a new column with a formula.
 - overwrite_formula_column: Replace values in an existing column with a formula.
 - create_helper_column: Create a hidden or secondary column for intermediate logic.
@@ -41,6 +42,7 @@ Rules:
 4. For formula_pattern, use A2, B2 style references which will be filled down.
 5. If the user asks for a dashboard, propose a summary sheet with KPIs.
 6. Use double quotes for strings inside formulas.
+7. If the user asks "what is this sheet/workbook about" or requests a summary/overview, use summarize_sheet.
 
 Context will be provided with sheet names and headers.
 """
@@ -124,10 +126,66 @@ class ExcelService:
             preview=self.get_preview(session_id)
         )
 
+    @staticmethod
+    def _requests_summary(user_instruction: str) -> bool:
+        lowered = " ".join(user_instruction.lower().split())
+        summary_terms = ("summar", "overview", "about", "describe", "explain")
+        scope_terms = ("sheet", "workbook", "excel", "file", "tab")
+        has_summary_term = any(term in lowered for term in summary_terms)
+        has_scope_term = any(term in lowered for term in scope_terms)
+        return has_summary_term and has_scope_term
+
+    def _build_sheet_summary_text(self, session_id: str, requested_sheet_name: str | None = None) -> str:
+        metadata = self.get_metadata(session_id)
+        if not metadata:
+            raise ValueError("Session not found")
+
+        target_sheet = requested_sheet_name or metadata.active_sheet
+        preview = self.get_preview(session_id, target_sheet)
+        if not preview:
+            return f"Workbook '{metadata.filename}' has {len(metadata.sheets)} sheet(s), but I could not load preview for '{target_sheet}'."
+
+        headers = [header for header in preview.headers if header and header != "None"]
+        sample_rows = preview.rows[:3]
+        row_descriptions: list[str] = []
+        for idx, row in enumerate(sample_rows, start=1):
+            pairs: list[str] = []
+            for col_idx, value in enumerate(row[: min(6, len(headers) if headers else 6)]):
+                label = headers[col_idx] if col_idx < len(headers) else f"Column {col_idx + 1}"
+                if value is None or str(value).strip() == "":
+                    continue
+                pairs.append(f"{label}={value}")
+            if pairs:
+                row_descriptions.append(f"row {idx}: " + ", ".join(pairs))
+
+        header_preview = ", ".join(headers[:10]) if headers else "No clear headers detected"
+        row_sample_preview = "; ".join(row_descriptions) if row_descriptions else "Sample rows are mostly empty."
+        other_sheets = [sheet for sheet in metadata.sheets if sheet != target_sheet]
+        linked_note = (
+            f"Other sheets available for cross-sheet formulas/lookups: {', '.join(other_sheets[:8])}."
+            if other_sheets
+            else "No additional sheets detected."
+        )
+
+        return (
+            f"Workbook '{metadata.filename}' appears to be a structured dataset. "
+            f"Active sheet '{target_sheet}' has approximately {preview.total_rows} row(s) and {preview.total_columns} column(s). "
+            f"Headers: {header_preview}. "
+            f"Quick sample: {row_sample_preview}. "
+            f"{linked_note}"
+        )
+
     async def plan_action(self, session_id: str, user_instruction: str, model_id: Optional[str] = None) -> ExcelActionPlan:
         metadata = self.get_metadata(session_id)
         if not metadata:
             raise ValueError("Session not found")
+
+        if self._requests_summary(user_instruction):
+            return ExcelActionPlan(
+                action_type="summarize_sheet",
+                sheet_name=metadata.active_sheet,
+                explanation="User requested a summary of the workbook/sheet.",
+            )
         
         preview = metadata.preview
         context = {
@@ -182,6 +240,8 @@ class ExcelService:
         
         if plan.action_type == "ask_clarification":
             return plan.clarification_question or "I'm not sure what you want to do. Could you clarify?"
+        if plan.action_type == "summarize_sheet":
+            return self._build_sheet_summary_text(session_id, sheet_name)
 
         if sheet_name not in wb.sheetnames:
             if plan.action_type in ("create_summary_sheet", "create_dashboard_sheet"):

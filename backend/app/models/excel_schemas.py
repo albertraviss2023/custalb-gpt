@@ -5,6 +5,7 @@ from pydantic import Field
 from .schemas import ApiModel
 
 ExcelActionType = Literal[
+    "summarize_sheet",
     "create_formula_column",
     "overwrite_formula_column",
     "create_helper_column",
